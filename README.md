@@ -27,24 +27,24 @@ Discord User
 ┌──────────────────┐
 │  Daemon          │  ← runs on your Linux machine
 │  (daemon/)       │     - watches the channel
-│                  │     - asks for approval (password)
+│                  │     - asks for approval (✅ / ❌ reaction)
 │                  │     - executes command
 │                  │     - sends output back
 └──────────────────┘
 ```
 
-## Features (planned / current)
+## Features
 
 - [x] Clean separation: Bot has no rights
 - [x] Prefix commands (`!`)
-- [ ] Password / approval before execution
-- [ ] Safe command execution (stdout/stderr capture)
-- [ ] Binary-safe output handling where possible
+- [x] Approval via Discord reactions (works with systemd)
+- [x] Safe command execution (stdout/stderr capture)
+- [x] Binary-safe output handling where possible
 - [ ] Allowlist for users / channels
-- [ ] systemd service file
-- [ ] Logging
+- [x] systemd user service
+- [ ] Logging improvements
 
-## Quick Start (Linux)
+## Quick Start (Linux / Bazzite)
 
 ### 1. Clone & install
 
@@ -60,19 +60,50 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# edit .env and fill in your Discord bot token + channel ID + approval password
+# edit .env → DISCORD_TOKEN + COMMAND_CHANNEL_ID
 ```
 
-### 3. Run
+### 3. Enable Message Content Intent
 
-**Terminal 1 – Bot**
-```bash
-python -m bot.main
+In the [Discord Developer Portal](https://discord.com/developers/applications/) → your bot → **Bot** → enable **MESSAGE CONTENT INTENT**.
+
+### 4. Invite the bot
+
+```
+https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=274877975552&scope=bot
 ```
 
-**Terminal 2 – Daemon**
+### 5. Run as systemd user service (recommended)
+
 ```bash
-python -m daemon.main
+mkdir -p ~/.config/systemd/user
+```
+
+Create `~/.config/systemd/user/chronos-daemon.service`:
+
+```ini
+[Unit]
+Description=Chronos Daemon - Discord command watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Chronos
+ExecStart=%h/Chronos/venv/bin/python -m daemon.main
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
+```
+
+Then:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now chronos-daemon.service
 ```
 
 ## Usage
@@ -85,14 +116,13 @@ In the configured Discord channel:
 !cmd ls -la /
 ```
 
-The daemon will ask for approval in the terminal before running anything.
+The daemon will post an approval message. React with ✅ to execute or ❌ to deny.
 
 ## Security Notes
 
-- The bot token should only have the minimum permissions needed (message content, send messages).
+- The bot token should only have the minimum permissions needed.
 - The daemon is the only component that can execute code on your machine.
-- Always use a strong approval password.
-- Run the daemon under a dedicated low-privilege user if possible.
+- Run the daemon under your normal user (or a dedicated low-privilege user).
 - Never commit your real `.env` file.
 
 ## Project Structure

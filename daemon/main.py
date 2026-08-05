@@ -3,7 +3,7 @@ Chronos Daemon
 
 Runs on your Linux machine.
 Watches the configured Discord channel for commands,
-asks for approval, then executes them.
+asks for approval via reactions, then executes them.
 """
 
 import asyncio
@@ -16,6 +16,8 @@ from shared.protocol import parse_command
 
 intents = discord.Intents.default()
 intents.message_content = True
+# Needed for reaction events
+intents.reactions = True
 
 client = discord.Client(intents=intents)
 
@@ -39,17 +41,15 @@ async def on_message(message: discord.Message):
     if cmd is None:
         return
 
-    author = str(message.author)
+    print(f"[Daemon] Command received from {message.author}: {cmd}")
 
-    # Approval happens in the terminal of the machine running the daemon
-    approved = await asyncio.to_thread(request_approval, cmd, author)
+    # Approval via Discord reactions (works with systemd)
+    approved = await request_approval(message, cmd, client)
 
     if not approved:
-        await message.reply("❌ Command denied.")
         return
 
     await message.add_reaction("⚙️")
-    await message.reply(f"Executing: `{cmd}` ...")
 
     returncode, stdout, stderr = await asyncio.to_thread(run_command, cmd)
 
@@ -69,7 +69,6 @@ async def on_message(message: discord.Message):
 
     response = "\n".join(parts)
 
-    # Split if still too long
     if len(response) > 2000:
         response = response[:1990] + "\n... (truncated)"
 
