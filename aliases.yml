@@ -1,0 +1,15 @@
+# Chronos command aliases
+# Format: alias_name: actual shell command
+#
+# Usage in Discord:
+#   !backup
+#   !uptime
+#   !sysinfo
+#
+# The alias is resolved BEFORE approval, so you always see the real command.
+
+backup: tar -czf /tmp/home-backup-$(date +%Y%m%d-%H%M%S).tar.gz -C / home
+uptime: uptime
+sysinfo: uname -a && echo && free -h && echo && df -h
+whoami: whoami
+pwd: pwd
