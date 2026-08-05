@@ -1,9 +1,6 @@
 """
-Chronos Discord Bot
-
-This bot has ZERO privileges on the target machine.
-It only accepts commands and posts them into the configured channel
-so the daemon can pick them up.
+Chronos Discord Bot – messenger only, no execution rights.
+Optional: the daemon alone is enough if it watches the channel.
 """
 
 import discord
@@ -27,29 +24,25 @@ async def on_ready():
 
 @bot.event
 async def on_message(message: discord.Message):
-    # Ignore own messages
     if message.author == bot.user:
         return
 
-    # Only listen in the configured channel
     if message.channel.id != COMMAND_CHANNEL_ID:
         return
 
-    # Optional user allowlist
     if ALLOWED_USER_IDS and message.author.id not in ALLOWED_USER_IDS:
-        await message.reply("You are not allowed to send commands.")
         return
 
     cmd = parse_command(message.content)
     if cmd is None:
         return
 
-    # Just acknowledge – the daemon will handle execution
-    await message.add_reaction("👀")
-    print(f"[Bot] Command received from {message.author}: {cmd}")
-
-    # The daemon is watching the same channel and will pick this up.
-    # We do NOT execute anything here on purpose.
+    # Acknowledge only – daemon executes
+    try:
+        await message.add_reaction("👀")
+    except discord.HTTPException:
+        pass
+    print(f"[Bot] Command seen from {message.author}: {cmd}")
 
 
 def main():

@@ -7,8 +7,7 @@ from typing import Optional
 
 import yaml
 
-# aliases.yml lives in the project root
-ALIASES_FILE = Path(__file__).resolve().parent.parent / "aliases.yml"
+from shared.config import aliases_path
 
 _aliases: dict[str, str] = {}
 _loaded = False
@@ -21,18 +20,23 @@ def load_aliases(force: bool = False) -> dict[str, str]:
         return _aliases
 
     _aliases = {}
-    if not ALIASES_FILE.exists():
-        print(f"[Aliases] No aliases file found at {ALIASES_FILE}")
+    path = aliases_path()
+
+    if not path.exists():
+        print(f"[Aliases] No aliases file found at {path}")
         _loaded = True
         return _aliases
 
     try:
-        with open(ALIASES_FILE, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         if isinstance(data, dict):
-            # keys lowercased for case-insensitive matching
-            _aliases = {str(k).lower().strip(): str(v).strip() for k, v in data.items()}
-        print(f"[Aliases] Loaded {len(_aliases)} aliases from {ALIASES_FILE}")
+            _aliases = {
+                str(k).lower().strip(): str(v).strip()
+                for k, v in data.items()
+                if k is not None and v is not None
+            }
+        print(f"[Aliases] Loaded {len(_aliases)} aliases from {path}")
     except Exception as e:
         print(f"[Aliases] Failed to load aliases: {e}")
 
@@ -41,10 +45,6 @@ def load_aliases(force: bool = False) -> dict[str, str]:
 
 
 def resolve_alias(name: str) -> Optional[str]:
-    """
-    If `name` is an alias, return the real command.
-    Otherwise return None.
-    """
     aliases = load_aliases()
     return aliases.get(name.lower().strip())
 

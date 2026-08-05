@@ -1,18 +1,17 @@
-import os
-from dotenv import load_dotenv
+"""
+Bot config – thin wrappers around shared.config
+"""
 
-load_dotenv()
+from shared.config import (
+    discord_token as DISCORD_TOKEN_FN,
+    command_channel_id as COMMAND_CHANNEL_ID_FN,
+    command_prefix as COMMAND_PREFIX_FN,
+    allowed_command_user_ids as ALLOWED_USER_IDS_FN,
+    load_config,
+)
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-COMMAND_CHANNEL_ID = int(os.getenv("COMMAND_CHANNEL_ID", "0"))
-ALLOWED_USER_IDS = [
-    int(uid.strip())
-    for uid in os.getenv("ALLOWED_USER_IDS", "").split(",")
-    if uid.strip().isdigit()
-]
-COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "!")
-
-if not DISCORD_TOKEN:
-    raise ValueError("DISCORD_TOKEN is missing in .env")
-if COMMAND_CHANNEL_ID == 0:
-    raise ValueError("COMMAND_CHANNEL_ID is missing in .env")
+DISCORD_TOKEN = DISCORD_TOKEN_FN()
+COMMAND_CHANNEL_ID = COMMAND_CHANNEL_ID_FN()
+COMMAND_PREFIX = COMMAND_PREFIX_FN()
+ALLOWED_USER_IDS = ALLOWED_USER_IDS_FN()
+load_config()

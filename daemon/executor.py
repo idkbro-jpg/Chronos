@@ -1,51 +1,75 @@
 """
 Command executor.
-
-Designed to handle normal text output and be reasonably robust
-with binary / weird output (we still try to decode as utf-8 with replacement).
 """
 
-import subprocess
+from __future__ import annotations
+
+import os
+import re
 import shlex
+import subprocess
 from typing import Tuple
 
-def run_command(command: str, timeout: int = 60) -> Tuple[int, str, str]:
+from shared.config import exec_timeout, use_shell, strip_ansi
+
+_ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def _clean(text: str) -> str:
+    if not text:
+        return ""
+    if strip_ansi():
+        text = _ANSI_RE.sub("", text)
+    return text
+
+
+def run_command(command: str, timeout: int | None = None) -> Tuple[int, str, str]:
     """
-    Execute a shell command and return (returncode, stdout, stderr).
-
-    We use shell=False + shlex.split for better safety.
-    For complex pipes/redirections the user can still do:
-        !cmd bash -c 'your complex command'
+    Execute a command and return (returncode, stdout, stderr).
     """
-    try:
-        args = shlex.split(command)
-    except ValueError as e:
-        return 1, "", f"Failed to parse command: {e}"
+    if timeout is None:
+        timeout = exec_timeout()
 
-    if not args:
-        return 1, "", "Empty command"
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    env["TERM"] = env.get("TERM") or "dumb"
 
     try:
-        result = subprocess.run(
-            args,
-            capture_output=True,
-            timeout=timeout,
-            # text=False so we can handle binary-ish output more gracefully
-        )
+        if use_shell():
+            # Needed for &&, pipes, $(), redirects in aliases
+            result = subprocess.run(
+                command,
+                shell=True,
+                executable="/bin/bash",
+                capture_output=True,
+                timeout=timeout,
+                env=env,
+            )
+        else:
+            try:
+                args = shlex.split(command)
+            except ValueError as e:
+                return 1, "", f"Failed to parse command: {e}"
+            if not args:
+                return 1, "", "Empty command"
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                timeout=timeout,
+                env=env,
+            )
     except subprocess.TimeoutExpired:
         return 1, "", f"Command timed out after {timeout} seconds"
-    except FileNotFoundError:
-        return 1, "", f"Command not found: {args[0]}"
+    except FileNotFoundError as e:
+        return 1, "", f"Command not found: {e.filename or command.split()[0]}"
     except Exception as e:
         return 1, "", f"Execution error: {e}"
 
     def safe_decode(data: bytes) -> str:
         if not data:
             return ""
-        # Try utf-8, fall back to replacement so binary doesn't crash us
         return data.decode("utf-8", errors="replace")
 
-    stdout = safe_decode(result.stdout)
-    stderr = safe_decode(result.stderr)
-
+    stdout = _clean(safe_decode(result.stdout))
+    stderr = _clean(safe_decode(result.stderr))
     return result.returncode, stdout, stderr

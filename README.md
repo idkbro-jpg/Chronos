@@ -2,88 +2,51 @@
 
 Secure remote command execution via Discord.
 
-The Discord bot has **zero privileges**.  
-It only posts commands into a channel.  
-A separate daemon running on your Linux machine watches the channel, requires approval, and then executes the command.
+The Discord side is only a messenger.  
+A daemon on your Linux machine watches a channel, asks for reaction approval, then executes.
 
-## Architecture
+## Config
 
-```
-Discord User
-    │
-    │  !neofetch / !cmd <command>
-    ▼
-┌──────────────────┐
-│  Discord Bot     │  ← only messenger, no shell access
-│  (bot/)          │
-└────────┬─────────┘
-         │ posts message into configured channel
-         ▼
-┌──────────────────┐
-│  Discord Channel │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│  Daemon          │  ← runs on your Linux machine
-│  (daemon/)       │     - watches the channel
-│                  │     - asks for approval (✅ / ❌ reaction)
-│                  │     - executes command
-│                  │     - sends output back
-└──────────────────┘
+| File | Purpose |
+|------|--------|
+| `.env` | Secrets: `DISCORD_TOKEN`, `COMMAND_CHANNEL_ID` |
+| `config.yml` | Everything else: timeouts, emojis, shell, prefix, allowlists |
+| `aliases.yml` | Command shortcuts (`!backup`, `!aegis`, …) |
+
+After changing `config.yml` or `aliases.yml`:
+
+```text
+!reload
 ```
 
-## Features
+or restart the systemd service.
 
-- [x] Clean separation: Bot has no rights
-- [x] Prefix commands (`!`)
-- [x] Approval via Discord reactions (works with systemd)
-- [x] Safe command execution (stdout/stderr capture)
-- [x] Binary-safe output handling where possible
-- [ ] Allowlist for users / channels
-- [x] systemd user service
-- [ ] Logging improvements
-
-## Quick Start (Linux / Bazzite)
-
-### 1. Clone & install
+## Quick Start (Bazzite / Linux)
 
 ```bash
-git clone https://github.com/idkbro-jpg/Chronos.git
-cd Chronos
+cd ~/Chronos
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 2. Configure
-
-```bash
 cp .env.example .env
-# edit .env → DISCORD_TOKEN + COMMAND_CHANNEL_ID
+# edit .env
 ```
 
-### 3. Enable Message Content Intent
+Enable **MESSAGE CONTENT INTENT** in the Discord Developer Portal.
 
-In the [Discord Developer Portal](https://discord.com/developers/applications/) → your bot → **Bot** → enable **MESSAGE CONTENT INTENT**.
-
-### 4. Invite the bot
+Invite (replace CLIENT_ID):
 
 ```
-https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=274877975552&scope=bot
+https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=274877975552&scope=bot
 ```
 
-### 5. Run as systemd user service (recommended)
+### systemd user service
 
-```bash
-mkdir -p ~/.config/systemd/user
-```
-
-Create `~/.config/systemd/user/chronos-daemon.service`:
+`~/.config/systemd/user/chronos-daemon.service`:
 
 ```ini
 [Unit]
-Description=Chronos Daemon - Discord command watcher
+Description=Chronos Daemon
 After=network-online.target
 Wants=network-online.target
 
@@ -99,8 +62,6 @@ Environment=PYTHONUNBUFFERED=1
 WantedBy=default.target
 ```
 
-Then:
-
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now chronos-daemon.service
@@ -108,31 +69,22 @@ systemctl --user enable --now chronos-daemon.service
 
 ## Usage
 
-In the configured Discord channel:
-
-```
-!neofetch
+```text
+!uptime
 !cmd uname -a
-!cmd ls -la /
+!aegis example.com -s 2
+!aliases
+!reload
 ```
 
-The daemon will post an approval message. React with ✅ to execute or ❌ to deny.
+React ✅ to run, ❌ to deny.
 
-## Security Notes
-
-- The bot token should only have the minimum permissions needed.
-- The daemon is the only component that can execute code on your machine.
-- Run the daemon under your normal user (or a dedicated low-privilege user).
-- Never commit your real `.env` file.
-
-## Project Structure
+## Architecture
 
 ```
-Chronos/
-├── bot/           # Discord bot (messenger only)
-├── daemon/        # Watcher + executor on your machine
-├── shared/        # Shared constants / protocol
-├── .env.example
-├── requirements.txt
-└── README.md
+Discord message  →  Daemon watches channel
+                 →  Resolve alias (config)
+                 →  Approval reaction
+                 →  Execute on machine
+                 →  Output back to Discord
 ```

@@ -1,16 +1,14 @@
-import os
-from dotenv import load_dotenv
+"""
+Daemon config – thin wrappers around shared.config
+"""
 
-load_dotenv()
+from shared.config import (
+    discord_token as DISCORD_TOKEN_FN,
+    command_channel_id as COMMAND_CHANNEL_ID_FN,
+    load_config,
+)
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-COMMAND_CHANNEL_ID = int(os.getenv("COMMAND_CHANNEL_ID", "0"))
-APPROVAL_PASSWORD = os.getenv("APPROVAL_PASSWORD", "")
-COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "!")
-
-if not DISCORD_TOKEN:
-    raise ValueError("DISCORD_TOKEN is missing in .env")
-if COMMAND_CHANNEL_ID == 0:
-    raise ValueError("COMMAND_CHANNEL_ID is missing in .env")
-if not APPROVAL_PASSWORD:
-    raise ValueError("APPROVAL_PASSWORD is missing in .env")
+# Eager validate secrets on import
+DISCORD_TOKEN = DISCORD_TOKEN_FN()
+COMMAND_CHANNEL_ID = COMMAND_CHANNEL_ID_FN()
+load_config()

@@ -1,12 +1,9 @@
 """
-Chronos Daemon
-
-Runs on your Linux machine.
-Watches the configured Discord channel for commands,
-resolves aliases, asks for approval via reactions, then executes them.
+Chronos Daemon – watches Discord, approves, executes.
 """
 
 import asyncio
+
 import discord
 
 from daemon.config import DISCORD_TOKEN, COMMAND_CHANNEL_ID
@@ -14,6 +11,11 @@ from daemon.approval import request_approval
 from daemon.executor import run_command
 from shared.protocol import parse_command, format_alias_list
 from shared.aliases import load_aliases
+from shared.config import (
+    load_config,
+    max_output_chars,
+    allowed_command_user_ids,
+)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -22,9 +24,39 @@ intents.reactions = True
 client = discord.Client(intents=intents)
 
 
+def _chunk_text(text: str, limit: int) -> list[str]:
+    if not text:
+        return []
+    chunks = []
+    while text:
+        chunks.append(text[:limit])
+        text = text[limit:]
+    return chunks
+
+
+async def _send_output(message: discord.Message, returncode: int, stdout: str, stderr: str):
+    limit = max_output_chars()
+    header = f"**Exit code:** `{returncode}`"
+    await message.reply(header)
+
+    if stdout:
+        for i, chunk in enumerate(_chunk_text(stdout, limit)):
+            label = "**stdout:**" if i == 0 else f"**stdout (cont. {i + 1}):**"
+            await message.reply(f"{label}\n```\n{chunk}\n```")
+
+    if stderr:
+        for i, chunk in enumerate(_chunk_text(stderr, limit)):
+            label = "**stderr:**" if i == 0 else f"**stderr (cont. {i + 1}):**"
+            await message.reply(f"{label}\n```\n{chunk}\n```")
+
+    if not stdout and not stderr:
+        await message.reply("_No output_")
+
+
 @client.event
 async def on_ready():
-    load_aliases(force=True)  # load on startup
+    load_config(force=True)
+    load_aliases(force=True)
     print(f"[Daemon] Logged in as {client.user} (ID: {client.user.id})")
     print(f"[Daemon] Watching channel ID: {COMMAND_CHANNEL_ID}")
     print("[Daemon] Ready. Waiting for commands...")
@@ -38,46 +70,35 @@ async def on_message(message: discord.Message):
     if message.channel.id != COMMAND_CHANNEL_ID:
         return
 
+    allowed = allowed_command_user_ids()
+    if allowed and message.author.id not in allowed:
+        await message.reply("You are not allowed to send commands.")
+        return
+
     cmd = parse_command(message.content)
     if cmd is None:
         return
 
-    # Built-in: list aliases (no approval needed)
     if cmd == "__LIST_ALIASES__":
         await message.reply(format_alias_list())
         return
 
+    if cmd == "__RELOAD__":
+        load_config(force=True)
+        load_aliases(force=True)
+        await message.reply("🔄 Config + aliases reloaded.")
+        return
+
     print(f"[Daemon] Command received from {message.author}: {cmd}")
 
-    # Approval via Discord reactions (shows the *resolved* command)
     approved = await request_approval(message, cmd, client)
-
     if not approved:
         return
 
     await message.add_reaction("⚙️")
 
     returncode, stdout, stderr = await asyncio.to_thread(run_command, cmd)
-
-    parts = []
-    parts.append(f"**Exit code:** `{returncode}`")
-
-    if stdout:
-        parts.append("**stdout:**")
-        parts.append(f"```\n{stdout[:1800]}\n```")
-    if stderr:
-        parts.append("**stderr:**")
-        parts.append(f"```\n{stderr[:1800]}\n```")
-
-    if not stdout and not stderr:
-        parts.append("_No output_")
-
-    response = "\n".join(parts)
-
-    if len(response) > 2000:
-        response = response[:1990] + "\n... (truncated)"
-
-    await message.reply(response)
+    await _send_output(message, returncode, stdout, stderr)
 
 
 def main():

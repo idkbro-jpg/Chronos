@@ -1,66 +1,76 @@
 """
 Discord reaction-based approval.
-
-Works when the daemon runs as a background systemd service.
 """
 
 import asyncio
-from typing import Optional
 
 import discord
 
-# How long we wait for a reaction (seconds)
-APPROVAL_TIMEOUT = 60
-
-APPROVE_EMOJI = "✅"
-DENY_EMOJI = "❌"
+from shared.config import (
+    approval_timeout,
+    approve_emoji,
+    deny_emoji,
+    allowed_approval_user_ids,
+)
 
 
 async def request_approval(
     message: discord.Message,
     command: str,
     client: discord.Client,
-    allowed_user_ids: list[int] | None = None,
 ) -> bool:
-    """
-    Ask for approval via Discord reactions on the original message.
+    timeout = approval_timeout()
+    ok = approve_emoji()
+    no = deny_emoji()
+    allowed = allowed_approval_user_ids()
 
-    Returns True if approved, False if denied or timed out.
-    """
+    # Truncate very long commands in the prompt
+    shown = command if len(command) <= 200 else command[:197] + "..."
+
     prompt = await message.reply(
-        f"**Approval needed** for `{command}`\n"
-        f"React with {APPROVE_EMOJI} to execute or {DENY_EMOJI} to deny.\n"
-        f"(Timeout: {APPROVAL_TIMEOUT}s)"
+        f"**Approval needed** for `{shown}`\n"
+        f"React with {ok} to execute or {no} to deny.\n"
+        f"(Timeout: {timeout}s)"
     )
 
-    await prompt.add_reaction(APPROVE_EMOJI)
-    await prompt.add_reaction(DENY_EMOJI)
+    await prompt.add_reaction(ok)
+    await prompt.add_reaction(no)
 
     def check(reaction: discord.Reaction, user: discord.User) -> bool:
         if user.bot:
             return False
         if reaction.message.id != prompt.id:
             return False
-        if str(reaction.emoji) not in (APPROVE_EMOJI, DENY_EMOJI):
+        if str(reaction.emoji) not in (ok, no):
             return False
-
-        # Optional: only allow specific users
-        if allowed_user_ids and user.id not in allowed_user_ids:
+        if allowed and user.id not in allowed:
             return False
-
         return True
 
     try:
         reaction, user = await client.wait_for(
-            "reaction_add", timeout=APPROVAL_TIMEOUT, check=check
+            "reaction_add", timeout=timeout, check=check
         )
     except asyncio.TimeoutError:
-        await prompt.edit(content=f"⏰ Timed out. Command `{command}` was **not** executed.")
+        try:
+            await prompt.edit(
+                content=f"⏰ Timed out. Command `{shown}` was **not** executed."
+            )
+        except discord.HTTPException:
+            pass
         return False
 
-    if str(reaction.emoji) == APPROVE_EMOJI:
-        await prompt.edit(content=f"✅ Approved by {user.display_name}. Executing `{command}`...")
+    if str(reaction.emoji) == ok:
+        try:
+            await prompt.edit(
+                content=f"{ok} Approved by {user.display_name}. Executing `{shown}`..."
+            )
+        except discord.HTTPException:
+            pass
         return True
 
-    await prompt.edit(content=f"❌ Denied by {user.display_name}.")
+    try:
+        await prompt.edit(content=f"{no} Denied by {user.display_name}.")
+    except discord.HTTPException:
+        pass
     return False

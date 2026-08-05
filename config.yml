@@ -1,0 +1,44 @@
+# ============================================================
+# Chronos – zentrale Konfiguration
+# Secrets (Token) bleiben in .env
+# Nach Änderungen: !reload  ODER  systemctl --user restart chronos-daemon
+# ============================================================
+
+discord:
+  # Prefix für Commands (!backup, !cmd …)
+  command_prefix: "!"
+
+  # Optional: nur diese Discord User-IDs dürfen Commands senden
+  # Leer = jeder im Channel
+  allowed_user_ids: []
+  # Beispiel:
+  # allowed_user_ids:
+  #   - 123456789012345678
+
+approval:
+  # Sekunden warten auf ✅ / ❌
+  timeout_seconds: 60
+
+  approve_emoji: "✅"
+  deny_emoji: "❌"
+
+  # Optional: nur diese User dürfen freigeben
+  # Leer = jeder (nicht-Bot) darf ✅/❌
+  allowed_user_ids: []
+
+execution:
+  # Max. Laufzeit eines Befehls in Sekunden (aegis/nmap brauchen oft mehr)
+  timeout_seconds: 300
+
+  # true  = bash -c "…"  → Pipes, &&, $(), Redirects funktionieren
+  # false = shlex + ohne Shell (sicherer, aber eingeschränkt)
+  use_shell: true
+
+  # Max. Zeichen pro Discord-Nachricht-Block (Discord-Limit ~2000)
+  max_output_chars: 1800
+
+  # ANSI-Farbcodes aus Output entfernen (z.B. von colorama)
+  strip_ansi: true
+
+files:
+  aliases: aliases.yml
