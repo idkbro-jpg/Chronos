@@ -5,6 +5,7 @@ Chronos Daemon – watches Discord, approves, executes.
 from __future__ import annotations
 
 import asyncio
+import time
 
 import discord
 
@@ -39,9 +40,12 @@ from shared.config import (
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
-intents.dm_messages = True
+# DMs use the same message_content intent; there is no intents.dm_messages
 
 client = discord.Client(intents=intents)
+
+# Simple unlock brute-force brake (per user id)
+_unlock_fail_until: dict[int, float] = {}
 
 
 def _chunk_text(text: str, limit: int) -> list[str]:
@@ -72,6 +76,14 @@ async def _send_output(message: discord.Message, returncode: int, stdout: str, s
         await message.reply("_No output_")
 
 
+def _user_allowed(uid: int) -> bool:
+    """Whitelist: if enabled, only listed IDs. Empty list = nobody."""
+    if not whitelist_enabled():
+        return True
+    allowed = allowed_command_user_ids()
+    return uid in allowed
+
+
 async def _handle_luks_unlock(message: discord.Message):
     summary = f"LUKS unlock device=`{luks_device()}` → mapper=`{luks_mapper_name()}`"
     approved = await request_approval(message, summary, client)
@@ -97,26 +109,34 @@ async def on_message(message: discord.Message):
     if message.author == client.user:
         return
 
-    # --- DM path: only for unlock <password> ---
+    # --- DM path: only unlock <password> ---
     if isinstance(message.channel, discord.DMChannel):
         content = message.content.strip()
         low = content.lower()
         if low.startswith("unlock ") or low.startswith("!unlock "):
+            uid = message.author.id
+            until = _unlock_fail_until.get(uid, 0)
+            if time.time() < until:
+                await message.reply("Too many failed attempts. Wait a bit.")
+                return
+
             pw = content.split(None, 1)[1] if " " in content else ""
             if check_lock_password(pw):
                 set_locked(False)
                 set_alarm(False)
-                log_event("unlock_ok", user_id=message.author.id, user_name=str(message.author))
+                _unlock_fail_until.pop(uid, None)
+                log_event("unlock_ok", user_id=uid, user_name=str(message.author))
                 await message.reply("Unlocked. Lock + alarm cleared.")
             else:
+                _unlock_fail_until[uid] = time.time() + 15
                 log_event(
                     "unlock_fail",
-                    user_id=message.author.id,
+                    user_id=uid,
                     user_name=str(message.author),
                     detail="bad password",
                 )
-                set_alarm(True, f"failed unlock DM from {message.author.id}")
-                await message.reply("Wrong password. Alarm set.")
+                set_alarm(True, f"failed unlock DM from {uid}")
+                await message.reply("Wrong password. Alarm set. Try again in 15s.")
         else:
             await message.reply("DM only accepts: `unlock <password>`")
         return
@@ -127,29 +147,18 @@ async def on_message(message: discord.Message):
     uid = message.author.id
     uname = str(message.author)
 
-    # Whitelist
-    if whitelist_enabled():
-        allowed = allowed_command_user_ids()
-        if allowed and uid not in allowed:
-            log_event("denied", user_id=uid, user_name=uname, detail="not on whitelist")
-            await message.reply("Not on whitelist.")
-            return
+    if not _user_allowed(uid):
+        log_event("denied", user_id=uid, user_name=uname, detail="not on whitelist")
+        await message.reply("Not on whitelist.")
+        return
 
     cmd = parse_command(message.content)
     if cmd is None:
         return
 
-    # Always log command attempts (including your own)
     log_event("command", user_id=uid, user_name=uname, detail=cmd)
 
-    # Rate limit (logs + optional alarm)
-    ok_rl, rl_msg = check_rate_limit(uid)
-    if not ok_rl:
-        log_event("rate_limited", user_id=uid, user_name=uname, detail=rl_msg)
-        await message.reply("⏳ Rate limit exceeded. Alarm may be active — check `!status`.")
-        return
-
-    # Built-ins that must work even when locked: unlock instructions, status
+    # Status / unlock-help always available (even when locked)
     if cmd == "__STATUS__":
         await message.reply(
             f"**Status**\n"
@@ -163,12 +172,29 @@ async def on_message(message: discord.Message):
     if cmd == "__UNLOCK__":
         await message.reply(
             "To unlock: **DM this bot** with:\n"
-            "```\nunlock DEIN_BITWARDEN_PASSWORT\n```\n"
-            "(Password is never typed in the server channel.)"
+            "```\nunlock YOUR_LONG_PASSWORD\n```\n"
+            "(Never type the password in the server channel.)"
         )
         return
 
+    if cmd == "__ALARM_STATUS__":
+        await message.reply(
+            f"alarm=`{is_alarm()}` reason=`{alarm_reason() or '-'}`\n"
+            f"Clear via DM `unlock <password>` or delete `state/ALARM`."
+        )
+        return
+
+    # Rate limit (after status so status stays usable under pressure)
+    ok_rl, rl_msg = check_rate_limit(uid)
+    if not ok_rl:
+        log_event("rate_limited", user_id=uid, user_name=uname, detail=rl_msg)
+        await message.reply("⏳ Rate limit exceeded. Check `!status`.")
+        return
+
     if cmd == "__LOCK__":
+        approved = await request_approval(message, "LOCK system", client)
+        if not approved:
+            return
         set_locked(True)
         log_event("lock", user_id=uid, user_name=uname)
         await message.reply(
@@ -177,17 +203,14 @@ async def on_message(message: discord.Message):
         )
         return
 
-    if cmd == "__ALARM_STATUS__":
-        await message.reply(
-            f"alarm=`{is_alarm()}` reason=`{alarm_reason() or '-'}\n"
-            f"Clear via DM `unlock <password>` or delete `state/ALARM`."
-        )
-        return
-
-    # Block everything else while locked / alarm
     blocked, why = commands_blocked()
-    if blocked and cmd not in ("__LIST_ALIASES__",):
-        log_event("blocked_lock" if is_locked() else "blocked_alarm", user_id=uid, user_name=uname, detail=cmd)
+    if blocked:
+        log_event(
+            "blocked_lock" if is_locked() else "blocked_alarm",
+            user_id=uid,
+            user_name=uname,
+            detail=cmd,
+        )
         await message.reply(f"🚫 {why}")
         return
 
@@ -227,7 +250,6 @@ async def on_message(message: discord.Message):
         await message.reply("Here are recent logs:", file=discord.File(path))
         return
 
-    # Normal shell / alias command
     print(f"[Daemon] {uname}: {cmd}")
     approved = await request_approval(message, cmd, client)
     if not approved:
