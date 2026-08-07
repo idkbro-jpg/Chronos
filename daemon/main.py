@@ -14,6 +14,7 @@ from daemon.approval import request_approval
 from daemon.executor import run_command
 from daemon.luks import unlock_luks
 from daemon.logger import log_event, export_recent
+from daemon.inputsim import simulate_input
 from daemon.security import (
     is_locked,
     is_alarm,
@@ -40,11 +41,9 @@ from shared.config import (
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
-# DMs use the same message_content intent; there is no intents.dm_messages
 
 client = discord.Client(intents=intents)
 
-# Simple unlock brute-force brake (per user id)
 _unlock_fail_until: dict[int, float] = {}
 
 
@@ -77,11 +76,9 @@ async def _send_output(message: discord.Message, returncode: int, stdout: str, s
 
 
 def _user_allowed(uid: int) -> bool:
-    """Whitelist: if enabled, only listed IDs. Empty list = nobody."""
     if not whitelist_enabled():
         return True
-    allowed = allowed_command_user_ids()
-    return uid in allowed
+    return uid in allowed_command_user_ids()
 
 
 async def _handle_luks_unlock(message: discord.Message):
@@ -109,7 +106,6 @@ async def on_message(message: discord.Message):
     if message.author == client.user:
         return
 
-    # --- DM path: only unlock <password> ---
     if isinstance(message.channel, discord.DMChannel):
         content = message.content.strip()
         low = content.lower()
@@ -156,9 +152,9 @@ async def on_message(message: discord.Message):
     if cmd is None:
         return
 
+    # Log only the Chronos command string — never continuous keyboard capture
     log_event("command", user_id=uid, user_name=uname, detail=cmd)
 
-    # Status / unlock-help always available (even when locked)
     if cmd == "__STATUS__":
         await message.reply(
             f"**Status**\n"
@@ -184,7 +180,6 @@ async def on_message(message: discord.Message):
         )
         return
 
-    # Rate limit (after status so status stays usable under pressure)
     ok_rl, rl_msg = check_rate_limit(uid)
     if not ok_rl:
         log_event("rate_limited", user_id=uid, user_name=uname, detail=rl_msg)
@@ -248,6 +243,26 @@ async def on_message(message: discord.Message):
             await message.reply("No logs yet.")
             return
         await message.reply("Here are recent logs:", file=discord.File(path))
+        return
+
+    if cmd.startswith("__INPUT__:"):
+        spec = cmd[len("__INPUT__:"):].strip()
+        summary = f"keyboard input: {spec or '(empty)'}"
+        approved = await request_approval(message, summary, client)
+        if not approved:
+            return
+        ok, info = await asyncio.to_thread(simulate_input, spec)
+        log_event(
+            "input",
+            user_id=uid,
+            user_name=uname,
+            detail=spec,
+            extra={"ok": ok, "info": info[:200]},
+        )
+        if ok:
+            await message.reply(f"⌨️ {info}")
+        else:
+            await message.reply(f"⌨️ Failed: {info}")
         return
 
     print(f"[Daemon] {uname}: {cmd}")

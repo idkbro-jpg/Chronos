@@ -5,7 +5,7 @@ Shared command parsing helpers.
 from shared.aliases import resolve_alias, list_aliases
 from shared.config import command_prefix
 
-# Built-in command tokens
+# Built-in command tokens (no extra args)
 BUILTINS = {
     "aliases": "__LIST_ALIASES__",
     "alias": "__LIST_ALIASES__",
@@ -27,6 +27,14 @@ BUILTINS = {
     "logs": "__EXPORT_LOG__",
 }
 
+# Built-ins that take a payload: return "__TOKEN__:payload"
+BUILTINS_WITH_ARGS = {
+    "input": "__INPUT__",
+    "type": "__INPUT__",
+    "key": "__INPUT__",
+    "keys": "__INPUT__",
+}
+
 
 def is_command(content: str) -> bool:
     prefix = command_prefix()
@@ -46,21 +54,24 @@ def parse_command(content: str) -> str | None:
 
     lower = body.lower()
     first = lower.split()[0]
+    rest = body[len(body.split()[0]):].strip()
+
+    if first in BUILTINS_WITH_ARGS:
+        return f"{BUILTINS_WITH_ARGS[first]}:{rest}"
 
     if first in BUILTINS:
-        # unlock may carry nothing here; password only via DM
         return BUILTINS[first]
 
     if lower.startswith("cmd "):
         return body[4:].strip() or None
 
     word = body.split()[0]
-    rest = body[len(word):].strip()
+    rest2 = body[len(word):].strip()
 
     aliased = resolve_alias(word)
     if aliased is not None:
-        if rest:
-            return f"{aliased} {rest}"
+        if rest2:
+            return f"{aliased} {rest2}"
         return aliased
 
     return body
@@ -78,6 +89,6 @@ def format_alias_list() -> str:
     lines.append("```")
     lines.append(
         "_Built-ins: `!aliases` `!reload` `!lock` `!unlock` `!status` "
-        "`!screenshot` `!exportlog` `!luksunlock`_"
+        "`!screenshot` `!exportlog` `!input` `!luksunlock`_"
     )
     return "\n".join(lines)
