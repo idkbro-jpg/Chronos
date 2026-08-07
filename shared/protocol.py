@@ -15,6 +15,9 @@ def parse_command(content: str) -> str | None:
     """
     Extract the actual shell command from a Discord message.
     Aliases are resolved here (before approval).
+
+    Built-ins return special tokens:
+      __LIST_ALIASES__, __RELOAD__, __LUKS_UNLOCK__
     """
     content = content.strip()
     prefix = command_prefix()
@@ -28,13 +31,13 @@ def parse_command(content: str) -> str | None:
 
     lower = body.lower()
 
-    # Built-ins (no execution)
     if lower in ("aliases", "alias", "listaliases"):
         return "__LIST_ALIASES__"
     if lower in ("reload", "reloadaliases", "reloadconfig"):
         return "__RELOAD__"
+    if lower in ("luksunlock", "luks_unlock", "luks-unlock", "unlockluks"):
+        return "__LUKS_UNLOCK__"
 
-    # Explicit !cmd ... → raw command, no alias
     if lower.startswith("cmd "):
         return body[4:].strip() or None
 
@@ -52,13 +55,13 @@ def parse_command(content: str) -> str | None:
 
 def format_alias_list() -> str:
     aliases = list_aliases()
-    if not aliases:
-        return "No aliases defined."
-
     lines = ["**Available aliases:**", "```"]
-    for name, cmd in sorted(aliases.items()):
-        display = cmd if len(cmd) <= 80 else cmd[:77] + "..."
-        lines.append(f"{name:12} → {display}")
+    if aliases:
+        for name, cmd in sorted(aliases.items()):
+            display = cmd if len(cmd) <= 80 else cmd[:77] + "..."
+            lines.append(f"{name:12} → {display}")
+    else:
+        lines.append("(none)")
     lines.append("```")
-    lines.append("_Built-ins: `!aliases` · `!reload`_")
+    lines.append("_Built-ins: `!aliases` · `!reload` · `!luksunlock`_")
     return "\n".join(lines)

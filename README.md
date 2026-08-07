@@ -2,47 +2,34 @@
 
 Secure remote command execution via Discord.
 
-The Discord side is only a messenger.  
-A daemon on your Linux machine watches a channel, asks for reaction approval, then executes.
+Daemon on your Linux machine watches a channel, requires reaction approval, then runs commands. Optional LUKS unlock for secondary volumes after boot.
 
 ## Config
 
 | File | Purpose |
 |------|--------|
-| `.env` | Secrets: `DISCORD_TOKEN`, `COMMAND_CHANNEL_ID` |
-| `config.yml` | Everything else: timeouts, emojis, shell, prefix, allowlists |
-| `aliases.yml` | Command shortcuts (`!backup`, `!aegis`, …) |
-
-After changing `config.yml` or `aliases.yml`:
+| `.env` | `DISCORD_TOKEN`, `COMMAND_CHANNEL_ID` |
+| `config.yml` | Timeouts, emojis, shell, allowlists, LUKS |
+| `aliases.yml` | Shortcuts |
+| `secrets/` | Encrypted LUKS password + machine key (gitignored) |
 
 ```text
-!reload
+!reload          # reload config + aliases without restart
+!luksunlock      # unlock configured LUKS volume
 ```
 
-or restart the systemd service.
-
-## Quick Start (Bazzite / Linux)
+## Quick Start
 
 ```bash
 cd ~/Chronos
-python -m venv venv
-source venv/bin/activate
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
-# edit .env
+cp .env.example .env   # fill token + channel id
 ```
 
-Enable **MESSAGE CONTENT INTENT** in the Discord Developer Portal.
-
-Invite (replace CLIENT_ID):
-
-```
-https://discord.com/oauth2/authorize?client_id=CLIENT_ID&permissions=274877975552&scope=bot
-```
+Enable **MESSAGE CONTENT INTENT**. Invite bot with send/read/reaction perms.
 
 ### systemd user service
-
-`~/.config/systemd/user/chronos-daemon.service`:
 
 ```ini
 [Unit]
@@ -67,24 +54,14 @@ systemctl --user daemon-reload
 systemctl --user enable --now chronos-daemon.service
 ```
 
-## Usage
+## LUKS
 
-```text
-!uptime
-!cmd uname -a
-!aegis example.com -s 2
-!aliases
-!reload
-```
+See [docs/luks.md](docs/luks.md).
 
-React ✅ to run, ❌ to deny.
+Short version: works for volumes unlocked **after** boot. Not for pre-boot root unlock.
 
-## Architecture
-
-```
-Discord message  →  Daemon watches channel
-                 →  Resolve alias (config)
-                 →  Approval reaction
-                 →  Execute on machine
-                 →  Output back to Discord
+```bash
+python -m scripts.set_luks_password
+# then enable + set device in config.yml
+# !luksunlock in Discord
 ```

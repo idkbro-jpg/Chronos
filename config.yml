@@ -5,40 +5,47 @@
 # ============================================================
 
 discord:
-  # Prefix für Commands (!backup, !cmd …)
   command_prefix: "!"
-
-  # Optional: nur diese Discord User-IDs dürfen Commands senden
-  # Leer = jeder im Channel
   allowed_user_ids: []
-  # Beispiel:
-  # allowed_user_ids:
-  #   - 123456789012345678
 
 approval:
-  # Sekunden warten auf ✅ / ❌
   timeout_seconds: 60
-
   approve_emoji: "✅"
   deny_emoji: "❌"
-
-  # Optional: nur diese User dürfen freigeben
-  # Leer = jeder (nicht-Bot) darf ✅/❌
   allowed_user_ids: []
 
 execution:
-  # Max. Laufzeit eines Befehls in Sekunden (aegis/nmap brauchen oft mehr)
   timeout_seconds: 300
-
-  # true  = bash -c "…"  → Pipes, &&, $(), Redirects funktionieren
-  # false = shlex + ohne Shell (sicherer, aber eingeschränkt)
   use_shell: true
-
-  # Max. Zeichen pro Discord-Nachricht-Block (Discord-Limit ~2000)
   max_output_chars: 1800
-
-  # ANSI-Farbcodes aus Output entfernen (z.B. von colorama)
   strip_ansi: true
 
 files:
   aliases: aliases.yml
+
+# ------------------------------------------------------------
+# LUKS unlock (nach normalem Boot, wenn Chronos schon läuft)
+# Setup:  python -m scripts.set_luks_password
+# Nutzung: !luksunlock
+# ------------------------------------------------------------
+luks:
+  enabled: false
+
+  # Block device ODER vorhandener Mapper-Name je nach Situation
+  # Beispiel: /dev/nvme0n1p3  oder  /dev/disk/by-uuid/....
+  device: "/dev/sdX"
+
+  # Name unter /dev/mapper/<name> nach dem Unlock
+  mapper_name: "crypt_data"
+
+  # Verschlüsselte Passwortdatei (nie ins Git)
+  password_file: "secrets/luks.enc"
+
+  # Lokales Extra-Secret (wird beim Setup erzeugt, nie ins Git)
+  machine_secret_file: "secrets/machine.key"
+
+  # Optional: Befehl nach erfolgreichem Unlock (z.B. Mount)
+  # Leer = nur luksOpen
+  post_unlock_command: ""
+  # Beispiel:
+  # post_unlock_command: "mount /dev/mapper/crypt_data /mnt/data"

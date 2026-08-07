@@ -41,6 +41,14 @@ def _defaults() -> dict[str, Any]:
         "files": {
             "aliases": "aliases.yml",
         },
+        "luks": {
+            "enabled": False,
+            "device": "/dev/sdX",
+            "mapper_name": "crypt_data",
+            "password_file": "secrets/luks.enc",
+            "machine_secret_file": "secrets/machine.key",
+            "post_unlock_command": "",
+        },
     }
 
 
@@ -147,3 +155,36 @@ def aliases_path() -> Path:
     if not p.is_absolute():
         p = ROOT / p
     return p
+
+
+def _resolve_path(value: str) -> Path:
+    p = Path(value)
+    if not p.is_absolute():
+        p = ROOT / p
+    return p
+
+
+def luks_enabled() -> bool:
+    return bool(get().get("luks", {}).get("enabled", False))
+
+
+def luks_device() -> str:
+    return str(get().get("luks", {}).get("device") or "")
+
+
+def luks_mapper_name() -> str:
+    return str(get().get("luks", {}).get("mapper_name") or "crypt_data")
+
+
+def luks_password_file() -> Path:
+    return _resolve_path(str(get().get("luks", {}).get("password_file") or "secrets/luks.enc"))
+
+
+def luks_machine_secret_file() -> Path:
+    return _resolve_path(
+        str(get().get("luks", {}).get("machine_secret_file") or "secrets/machine.key")
+    )
+
+
+def luks_post_unlock_command() -> str:
+    return str(get().get("luks", {}).get("post_unlock_command") or "").strip()

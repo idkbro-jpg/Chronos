@@ -9,12 +9,16 @@ import discord
 from daemon.config import DISCORD_TOKEN, COMMAND_CHANNEL_ID
 from daemon.approval import request_approval
 from daemon.executor import run_command
+from daemon.luks import unlock_luks
 from shared.protocol import parse_command, format_alias_list
 from shared.aliases import load_aliases
 from shared.config import (
     load_config,
     max_output_chars,
     allowed_command_user_ids,
+    luks_enabled,
+    luks_device,
+    luks_mapper_name,
 )
 
 intents = discord.Intents.default()
@@ -53,12 +57,30 @@ async def _send_output(message: discord.Message, returncode: int, stdout: str, s
         await message.reply("_No output_")
 
 
+async def _handle_luks_unlock(message: discord.Message):
+    summary = (
+        f"LUKS unlock\n"
+        f"device=`{luks_device()}` → mapper=`{luks_mapper_name()}`"
+    )
+    approved = await request_approval(message, summary, client)
+    if not approved:
+        return
+
+    await message.add_reaction("🔓")
+    ok, msg = await asyncio.to_thread(unlock_luks)
+    if ok:
+        await message.reply(f"🔓 **Success**\n{msg}")
+    else:
+        await message.reply(f"🔒 **Failed**\n{msg}")
+
+
 @client.event
 async def on_ready():
     load_config(force=True)
     load_aliases(force=True)
     print(f"[Daemon] Logged in as {client.user} (ID: {client.user.id})")
     print(f"[Daemon] Watching channel ID: {COMMAND_CHANNEL_ID}")
+    print(f"[Daemon] LUKS unlock enabled: {luks_enabled()}")
     print("[Daemon] Ready. Waiting for commands...")
 
 
@@ -87,6 +109,11 @@ async def on_message(message: discord.Message):
         load_config(force=True)
         load_aliases(force=True)
         await message.reply("🔄 Config + aliases reloaded.")
+        return
+
+    if cmd == "__LUKS_UNLOCK__":
+        print(f"[Daemon] LUKS unlock requested by {message.author}")
+        await _handle_luks_unlock(message)
         return
 
     print(f"[Daemon] Command received from {message.author}: {cmd}")
