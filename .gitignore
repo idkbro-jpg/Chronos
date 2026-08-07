@@ -3,5 +3,7 @@ venv/
 __pycache__/
 *.pyc
 secrets/
+state/
+logs/
 *.enc
 machine.key

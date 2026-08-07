@@ -5,6 +5,28 @@ Shared command parsing helpers.
 from shared.aliases import resolve_alias, list_aliases
 from shared.config import command_prefix
 
+# Built-in command tokens
+BUILTINS = {
+    "aliases": "__LIST_ALIASES__",
+    "alias": "__LIST_ALIASES__",
+    "listaliases": "__LIST_ALIASES__",
+    "reload": "__RELOAD__",
+    "reloadaliases": "__RELOAD__",
+    "reloadconfig": "__RELOAD__",
+    "luksunlock": "__LUKS_UNLOCK__",
+    "luks_unlock": "__LUKS_UNLOCK__",
+    "luks-unlock": "__LUKS_UNLOCK__",
+    "unlockluks": "__LUKS_UNLOCK__",
+    "lock": "__LOCK__",
+    "unlock": "__UNLOCK__",
+    "alarm": "__ALARM_STATUS__",
+    "status": "__STATUS__",
+    "screenshot": "__SCREENSHOT__",
+    "ss": "__SCREENSHOT__",
+    "exportlog": "__EXPORT_LOG__",
+    "logs": "__EXPORT_LOG__",
+}
+
 
 def is_command(content: str) -> bool:
     prefix = command_prefix()
@@ -12,13 +34,6 @@ def is_command(content: str) -> bool:
 
 
 def parse_command(content: str) -> str | None:
-    """
-    Extract the actual shell command from a Discord message.
-    Aliases are resolved here (before approval).
-
-    Built-ins return special tokens:
-      __LIST_ALIASES__, __RELOAD__, __LUKS_UNLOCK__
-    """
     content = content.strip()
     prefix = command_prefix()
 
@@ -30,21 +45,19 @@ def parse_command(content: str) -> str | None:
         return None
 
     lower = body.lower()
+    first = lower.split()[0]
 
-    if lower in ("aliases", "alias", "listaliases"):
-        return "__LIST_ALIASES__"
-    if lower in ("reload", "reloadaliases", "reloadconfig"):
-        return "__RELOAD__"
-    if lower in ("luksunlock", "luks_unlock", "luks-unlock", "unlockluks"):
-        return "__LUKS_UNLOCK__"
+    if first in BUILTINS:
+        # unlock may carry nothing here; password only via DM
+        return BUILTINS[first]
 
     if lower.startswith("cmd "):
         return body[4:].strip() or None
 
-    first = body.split()[0]
-    rest = body[len(first):].strip()
+    word = body.split()[0]
+    rest = body[len(word):].strip()
 
-    aliased = resolve_alias(first)
+    aliased = resolve_alias(word)
     if aliased is not None:
         if rest:
             return f"{aliased} {rest}"
@@ -63,5 +76,8 @@ def format_alias_list() -> str:
     else:
         lines.append("(none)")
     lines.append("```")
-    lines.append("_Built-ins: `!aliases` · `!reload` · `!luksunlock`_")
+    lines.append(
+        "_Built-ins: `!aliases` `!reload` `!lock` `!unlock` `!status` "
+        "`!screenshot` `!exportlog` `!luksunlock`_"
+    )
     return "\n".join(lines)

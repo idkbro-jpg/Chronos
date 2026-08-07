@@ -24,6 +24,7 @@ def _defaults() -> dict[str, Any]:
     return {
         "discord": {
             "command_prefix": "!",
+            "whitelist_enabled": False,
             "allowed_user_ids": [],
         },
         "approval": {
@@ -37,6 +38,22 @@ def _defaults() -> dict[str, Any]:
             "use_shell": True,
             "max_output_chars": 1800,
             "strip_ansi": True,
+        },
+        "rate_limit": {
+            "enabled": True,
+            "max_commands": 20,
+            "window_seconds": 60,
+            "trigger_alarm": True,
+        },
+        "security": {
+            "state_dir": "state",
+            "lock_hash_file": "secrets/lock.hash",
+            "alarm_blocks_all": True,
+        },
+        "logging": {
+            "enabled": True,
+            "dir": "logs",
+            "also_log_denied": True,
         },
         "files": {
             "aliases": "aliases.yml",
@@ -111,6 +128,10 @@ def command_prefix() -> str:
     return str(get()["discord"].get("command_prefix") or "!")
 
 
+def whitelist_enabled() -> bool:
+    return bool(get()["discord"].get("whitelist_enabled", False))
+
+
 def allowed_command_user_ids() -> list[int]:
     ids = get()["discord"].get("allowed_user_ids") or []
     return [int(x) for x in ids]
@@ -162,6 +183,46 @@ def _resolve_path(value: str) -> Path:
     if not p.is_absolute():
         p = ROOT / p
     return p
+
+
+def rate_limit_enabled() -> bool:
+    return bool(get().get("rate_limit", {}).get("enabled", True))
+
+
+def rate_limit_max() -> int:
+    return int(get().get("rate_limit", {}).get("max_commands") or 20)
+
+
+def rate_limit_window() -> int:
+    return int(get().get("rate_limit", {}).get("window_seconds") or 60)
+
+
+def rate_limit_triggers_alarm() -> bool:
+    return bool(get().get("rate_limit", {}).get("trigger_alarm", True))
+
+
+def state_dir() -> Path:
+    return _resolve_path(str(get().get("security", {}).get("state_dir") or "state"))
+
+
+def lock_hash_file() -> Path:
+    return _resolve_path(str(get().get("security", {}).get("lock_hash_file") or "secrets/lock.hash"))
+
+
+def alarm_blocks_all() -> bool:
+    return bool(get().get("security", {}).get("alarm_blocks_all", True))
+
+
+def logging_enabled() -> bool:
+    return bool(get().get("logging", {}).get("enabled", True))
+
+
+def logs_dir() -> Path:
+    return _resolve_path(str(get().get("logging", {}).get("dir") or "logs"))
+
+
+def log_denied() -> bool:
+    return bool(get().get("logging", {}).get("also_log_denied", True))
 
 
 def luks_enabled() -> bool:

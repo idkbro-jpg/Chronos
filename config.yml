@@ -1,12 +1,18 @@
 # ============================================================
 # Chronos – zentrale Konfiguration
-# Secrets (Token) bleiben in .env
-# Nach Änderungen: !reload  ODER  systemctl --user restart chronos-daemon
+# Secrets → .env + secrets/
+# Nach Änderungen: !reload  oder  systemctl --user restart chronos-daemon
 # ============================================================
 
 discord:
   command_prefix: "!"
+
+  # true = nur IDs in allowed_user_ids dürfen Commands
+  whitelist_enabled: false
   allowed_user_ids: []
+  # Beispiel:
+  # allowed_user_ids:
+  #   - 123456789012345678
 
 approval:
   timeout_seconds: 60
@@ -20,32 +26,45 @@ execution:
   max_output_chars: 1800
   strip_ansi: true
 
+# ------------------------------------------------------------
+# Rate limit (pro Discord-User-ID)
+# ------------------------------------------------------------
+rate_limit:
+  enabled: true
+  # Max. Commands in window_seconds
+  max_commands: 20
+  window_seconds: 60
+  # Bei Überschreitung → Alarm-Modus + privates Log
+  trigger_alarm: true
+
+# ------------------------------------------------------------
+# Lock / Alarm ("tripwire")
+# Setup-Passwort: python -m scripts.set_lock_password
+# !lock  → alles dicht außer !unlock (per DM)
+# ------------------------------------------------------------
+security:
+  # Status-Dateien (gitignored unter state/)
+  state_dir: "state"
+  lock_hash_file: "secrets/lock.hash"
+  # Nach Alarm: alle Commands blocken bis lokales Unlock ODER !unlock per DM
+  alarm_blocks_all: true
+
+# ------------------------------------------------------------
+# Logging
+# ------------------------------------------------------------
+logging:
+  enabled: true
+  dir: "logs"
+  # Eine Datei pro Tag: logs/chronos-YYYY-MM-DD.log
+  also_log_denied: true
+
 files:
   aliases: aliases.yml
 
-# ------------------------------------------------------------
-# LUKS unlock (nach normalem Boot, wenn Chronos schon läuft)
-# Setup:  python -m scripts.set_luks_password
-# Nutzung: !luksunlock
-# ------------------------------------------------------------
 luks:
   enabled: false
-
-  # Block device ODER vorhandener Mapper-Name je nach Situation
-  # Beispiel: /dev/nvme0n1p3  oder  /dev/disk/by-uuid/....
   device: "/dev/sdX"
-
-  # Name unter /dev/mapper/<name> nach dem Unlock
   mapper_name: "crypt_data"
-
-  # Verschlüsselte Passwortdatei (nie ins Git)
   password_file: "secrets/luks.enc"
-
-  # Lokales Extra-Secret (wird beim Setup erzeugt, nie ins Git)
   machine_secret_file: "secrets/machine.key"
-
-  # Optional: Befehl nach erfolgreichem Unlock (z.B. Mount)
-  # Leer = nur luksOpen
   post_unlock_command: ""
-  # Beispiel:
-  # post_unlock_command: "mount /dev/mapper/crypt_data /mnt/data"
