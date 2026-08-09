@@ -115,8 +115,64 @@ def check_lock_password(password: str) -> bool:
     return verify_password(password, path.read_text(encoding="utf-8"))
 
 
-# --- rate limit (in-memory; resets on daemon restart — fine for personal use) ---
+# --- rate limit (in-memory + light disk persistence so restarts do not fully reset) ---
 _hits: dict[int, deque[float]] = defaultdict(deque)
+_hits_loaded = False
+
+
+def _rate_limit_path() -> Path:
+    return _ensure_state_dir() / "rate_limit.json"
+
+
+def _load_rate_hits() -> None:
+    global _hits_loaded
+    if _hits_loaded:
+        return
+    _hits_loaded = True
+    path = _rate_limit_path()
+    if not path.exists():
+        return
+    try:
+        import json
+
+        data = json.loads(path.read_text(encoding="utf-8"))
+        now = time.time()
+        window = rate_limit_window()
+        for uid_str, timestamps in (data or {}).items():
+            try:
+                uid = int(uid_str)
+            except (TypeError, ValueError):
+                continue
+            q: deque[float] = deque()
+            for t in timestamps or []:
+                try:
+                    tf = float(t)
+                except (TypeError, ValueError):
+                    continue
+                if now - tf <= window:
+                    q.append(tf)
+            if q:
+                _hits[uid] = q
+    except Exception:
+        # Corrupt / unreadable → start fresh; never block commands because of this
+        pass
+
+
+def _save_rate_hits() -> None:
+    path = _rate_limit_path()
+    try:
+        import json
+
+        now = time.time()
+        window = rate_limit_window()
+        out: dict[str, list[float]] = {}
+        for uid, q in _hits.items():
+            recent = [t for t in q if now - t <= window]
+            if recent:
+                out[str(uid)] = recent
+        path.write_text(json.dumps(out), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def check_rate_limit(user_id: int) -> tuple[bool, str]:
@@ -126,6 +182,8 @@ def check_rate_limit(user_id: int) -> tuple[bool, str]:
     """
     if not rate_limit_enabled():
         return True, ""
+
+    _load_rate_hits()
 
     now = time.time()
     window = rate_limit_window()
@@ -142,6 +200,7 @@ def check_rate_limit(user_id: int) -> tuple[bool, str]:
         return False, msg
 
     q.append(now)
+    _save_rate_hits()
     return True, ""
 
 
