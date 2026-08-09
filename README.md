@@ -14,6 +14,8 @@ Daemon on your Linux machine watches a channel, requires reaction approval, then
 | `secrets/` | Encrypted LUKS password + machine key (gitignored) |
 
 ```text
+!help            # command overview
+!status          # lock / alarm / rate-limit / luks
 !reload          # reload config + aliases without restart
 !luksunlock      # unlock configured LUKS volume
 ```
