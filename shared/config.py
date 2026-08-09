@@ -79,6 +79,22 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return out
 
 
+def _validate(cfg: dict[str, Any]) -> None:
+    """Print soft warnings for common misconfigurations (never raises)."""
+    try:
+        disc = cfg.get("discord") or {}
+        if disc.get("whitelist_enabled") and not (disc.get("allowed_user_ids") or []):
+            print("[Config] WARNING: whitelist_enabled=true but allowed_user_ids is empty → all users denied")
+
+        luks = cfg.get("luks") or {}
+        if luks.get("enabled"):
+            dev = str(luks.get("device") or "")
+            if not dev or dev == "/dev/sdX":
+                print("[Config] WARNING: luks.enabled=true but device is still the placeholder /dev/sdX")
+    except Exception:
+        pass
+
+
 def load_config(force: bool = False) -> dict[str, Any]:
     global _cfg, _loaded
     if _loaded and not force:
@@ -97,6 +113,7 @@ def load_config(force: bool = False) -> dict[str, Any]:
     else:
         print(f"[Config] No config.yml at {CONFIG_FILE} – using defaults")
 
+    _validate(cfg)
     _cfg = cfg
     _loaded = True
     return _cfg
