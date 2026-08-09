@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import secrets
 import time
 from collections import defaultdict, deque
@@ -22,6 +23,8 @@ from shared.config import (
     rate_limit_window,
     rate_limit_triggers_alarm,
     alarm_blocks_all,
+    execution_mode,
+    allowed_patterns,
 )
 
 
@@ -154,7 +157,6 @@ def _load_rate_hits() -> None:
             if q:
                 _hits[uid] = q
     except Exception:
-        # Corrupt / unreadable → start fresh; never block commands because of this
         pass
 
 
@@ -175,13 +177,13 @@ def _save_rate_hits() -> None:
         pass
 
 
-def check_rate_limit(user_id: int) -> tuple[bool, str]:
+def check_rate_limit(user_id: int) -> tuple[bool, str, int]:
     """
-    Returns (allowed, message).
+    Returns (allowed, message, retry_after_seconds).
     If not allowed and trigger_alarm, sets alarm.
     """
     if not rate_limit_enabled():
-        return True, ""
+        return True, "", 0
 
     _load_rate_hits()
 
@@ -194,14 +196,16 @@ def check_rate_limit(user_id: int) -> tuple[bool, str]:
         q.popleft()
 
     if len(q) >= limit:
+        oldest = q[0] if q else now
+        retry_after = max(1, int(window - (now - oldest)) + 1)
         msg = f"rate limit: {limit}/{window}s exceeded by user {user_id}"
         if rate_limit_triggers_alarm():
             set_alarm(True, msg)
-        return False, msg
+        return False, msg, retry_after
 
     q.append(now)
     _save_rate_hits()
-    return True, ""
+    return True, "", 0
 
 
 def commands_blocked() -> tuple[bool, str]:
@@ -214,3 +218,39 @@ def commands_blocked() -> tuple[bool, str]:
     if is_alarm() and alarm_blocks_all():
         return True, f"ALARM active ({alarm_reason() or 'unknown'}). Clear locally or unlock."
     return False, ""
+
+
+def command_allowed_by_policy(command: str) -> tuple[bool, str]:
+    """
+    When execution.mode is allowlist, only commands matching allowed_patterns may run.
+    Builtins are handled before this is called.
+    """
+    mode = execution_mode()
+    if mode != "allowlist":
+        return True, ""
+
+    patterns = allowed_patterns()
+    if not patterns:
+        return False, "allowlist mode with empty allowed_patterns – blocked"
+
+    cmd = command.strip()
+    for pat in patterns:
+        if pat.startswith("re:"):
+            try:
+                if re.search(pat[3:], cmd):
+                    return True, ""
+            except re.error:
+                continue
+        else:
+            try:
+                if re.fullmatch(
+                    re.escape(pat).replace(r"\*", ".*").replace(r"\?", "."),
+                    cmd,
+                ):
+                    return True, ""
+            except re.error:
+                continue
+            if pat in cmd:
+                return True, ""
+
+    return False, f"command not in allowlist (mode=allowlist)"
