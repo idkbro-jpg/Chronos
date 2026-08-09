@@ -14,14 +14,24 @@
 ## Known limitations (not bugs)
 
 - Discord exposes **user ids**, not client IPs → no IP/VPN ban on this path
-- Rate-limit state is in-memory (resets on daemon restart)
 - `shell=True` is powerful; rely on approval + whitelist
 - LUKS is for secondary volumes after boot only
 - String password wipe in Python is best-effort (immutable strs)
 - Screenshots need `grim` / spectacle / scrot installed
 
+## Polish applied 2026-08-09
+
+| Item | Notes |
+|------|-------|
+| Escape backticks in approval + output | `shared/discord_utils.py` + `_safe_code_block` |
+| Persist rate-limit hits | `state/rate_limit.json` (window-aware) |
+| `!help` / `!commands` | Full command overview |
+| Richer `!status` | Shows rate-limit + LUKS device/mapper |
+| Screenshot retention | Keep newest 10 only |
+| Soft config validation | Warn on empty whitelist / placeholder LUKS device |
+
 ## Optional later polish
 
-- Escape backticks in command text before putting in Discord markdown
-- Persist rate-limit hits to disk if you care across restarts
 - Polkit/sudo rule template for cryptsetup
+- Optional command allowlist / safer default than unrestricted shell
+- Mouse simulation alongside keyboard

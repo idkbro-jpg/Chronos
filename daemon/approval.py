@@ -12,6 +12,7 @@ from shared.config import (
     deny_emoji,
     allowed_approval_user_ids,
 )
+from shared.discord_utils import safe_inline
 
 
 async def request_approval(
@@ -24,8 +25,8 @@ async def request_approval(
     no = deny_emoji()
     allowed = allowed_approval_user_ids()
 
-    # Truncate very long commands in the prompt
-    shown = command if len(command) <= 200 else command[:197] + "..."
+    # Truncate + escape backticks so Discord markdown cannot break
+    shown = safe_inline(command, 200)
 
     prompt = await message.reply(
         f"**Approval needed** for `{shown}`\n"

@@ -11,6 +11,25 @@ from pathlib import Path
 
 from shared.config import state_dir
 
+# Keep only the newest N screenshots so state/ does not grow forever
+_MAX_SCREENSHOTS = 10
+
+
+def _prune_old_screenshots(out_dir: Path, keep: int = _MAX_SCREENSHOTS) -> None:
+    try:
+        files = sorted(
+            out_dir.glob("shot-*.png"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for old in files[keep:]:
+            try:
+                old.unlink(missing_ok=True)
+            except OSError:
+                pass
+    except OSError:
+        pass
+
 
 def take_screenshot() -> tuple[bool, str, Path | None]:
     out_dir = state_dir() / "screenshots"
@@ -36,6 +55,7 @@ def take_screenshot() -> tuple[bool, str, Path | None]:
         try:
             r = subprocess.run(cmd, capture_output=True, timeout=30)
             if r.returncode == 0 and out.exists() and out.stat().st_size > 0:
+                _prune_old_screenshots(out_dir)
                 return True, f"ok via {cmd[0]}", out
             err = (r.stderr or b"").decode("utf-8", errors="replace").strip()
             last_err = err or f"{cmd[0]} exit {r.returncode}"
