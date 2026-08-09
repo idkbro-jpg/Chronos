@@ -26,11 +26,12 @@ def _defaults() -> dict[str, Any]:
             "command_prefix": "!",
             "whitelist_enabled": False,
             "allowed_user_ids": [],
+            "audit_channel_id": 0,
         },
         "approval": {
             "timeout_seconds": 60,
-            "approve_emoji": "✅",
-            "deny_emoji": "❌",
+            "approve_emoji": "\u2705",
+            "deny_emoji": "\u274c",
             "allowed_user_ids": [],
         },
         "execution": {
@@ -38,6 +39,8 @@ def _defaults() -> dict[str, Any]:
             "use_shell": True,
             "max_output_chars": 1800,
             "strip_ansi": True,
+            "mode": "unrestricted",
+            "allowed_patterns": [],
         },
         "rate_limit": {
             "enabled": True,
@@ -54,6 +57,10 @@ def _defaults() -> dict[str, Any]:
             "enabled": True,
             "dir": "logs",
             "also_log_denied": True,
+        },
+        "history": {
+            "enabled": True,
+            "max_entries": 30,
         },
         "files": {
             "aliases": "aliases.yml",
@@ -80,17 +87,49 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 def _validate(cfg: dict[str, Any]) -> None:
-    """Print soft warnings for common misconfigurations (never raises)."""
     try:
         disc = cfg.get("discord") or {}
         if disc.get("whitelist_enabled") and not (disc.get("allowed_user_ids") or []):
-            print("[Config] WARNING: whitelist_enabled=true but allowed_user_ids is empty → all users denied")
-
+            print("[Config] WARNING: whitelist_enabled=true but allowed_user_ids is empty \u2192 all users denied")
+        if not disc.get("whitelist_enabled"):
+            print(
+                "[Config] \u26a0\ufe0f  SECURITY WARNING: whitelist is OFF. "
+                "Anyone who can post in the command channel can propose shell commands "
+                "on this machine (after reaction approval). "
+                "Set discord.whitelist_enabled: true and list your Discord user id(s)."
+            )
+        approval = cfg.get("approval") or {}
+        if not (approval.get("allowed_user_ids") or []):
+            print(
+                "[Config] NOTE: approval.allowed_user_ids is empty \u2192 "
+                "any non-bot user can approve/deny reactions."
+            )
         luks = cfg.get("luks") or {}
         if luks.get("enabled"):
             dev = str(luks.get("device") or "")
             if not dev or dev == "/dev/sdX":
                 print("[Config] WARNING: luks.enabled=true but device is still the placeholder /dev/sdX")
+        exec_cfg = cfg.get("execution") or {}
+        mode = str(exec_cfg.get("mode") or "unrestricted").lower()
+        if mode not in ("unrestricted", "allowlist"):
+            print(f"[Config] WARNING: unknown execution.mode={mode!r} \u2013 treating as unrestricted")
+        if mode == "allowlist" and not (exec_cfg.get("allowed_patterns") or []):
+            print("[Config] WARNING: execution.mode=allowlist but allowed_patterns is empty")
+        for key, section in (
+            ("timeout_seconds", "approval"),
+            ("timeout_seconds", "execution"),
+            ("max_commands", "rate_limit"),
+            ("window_seconds", "rate_limit"),
+            ("max_output_chars", "execution"),
+        ):
+            sec = cfg.get(section) or {}
+            val = sec.get(key)
+            if val is not None:
+                try:
+                    if int(val) <= 0:
+                        print(f"[Config] WARNING: {section}.{key}={val} should be > 0")
+                except (TypeError, ValueError):
+                    print(f"[Config] WARNING: {section}.{key}={val!r} is not an integer")
     except Exception:
         pass
 
@@ -99,7 +138,6 @@ def load_config(force: bool = False) -> dict[str, Any]:
     global _cfg, _loaded
     if _loaded and not force:
         return _cfg
-
     cfg = _defaults()
     if CONFIG_FILE.exists():
         try:
@@ -109,10 +147,9 @@ def load_config(force: bool = False) -> dict[str, Any]:
                 cfg = _deep_merge(cfg, data)
             print(f"[Config] Loaded {CONFIG_FILE}")
         except Exception as e:
-            print(f"[Config] Failed to load config.yml: {e} – using defaults")
+            print(f"[Config] Failed to load config.yml: {e} \u2013 using defaults")
     else:
-        print(f"[Config] No config.yml at {CONFIG_FILE} – using defaults")
-
+        print(f"[Config] No config.yml at {CONFIG_FILE} \u2013 using defaults")
     _validate(cfg)
     _cfg = cfg
     _loaded = True
@@ -154,16 +191,23 @@ def allowed_command_user_ids() -> list[int]:
     return [int(x) for x in ids]
 
 
+def audit_channel_id() -> int:
+    try:
+        return int(get()["discord"].get("audit_channel_id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def approval_timeout() -> int:
     return int(get()["approval"].get("timeout_seconds") or 60)
 
 
 def approve_emoji() -> str:
-    return str(get()["approval"].get("approve_emoji") or "✅")
+    return str(get()["approval"].get("approve_emoji") or "\u2705")
 
 
 def deny_emoji() -> str:
-    return str(get()["approval"].get("deny_emoji") or "❌")
+    return str(get()["approval"].get("deny_emoji") or "\u274c")
 
 
 def allowed_approval_user_ids() -> list[int]:
@@ -185,6 +229,18 @@ def max_output_chars() -> int:
 
 def strip_ansi() -> bool:
     return bool(get()["execution"].get("strip_ansi", True))
+
+
+def execution_mode() -> str:
+    mode = str(get()["execution"].get("mode") or "unrestricted").lower().strip()
+    if mode not in ("unrestricted", "allowlist"):
+        return "unrestricted"
+    return mode
+
+
+def allowed_patterns() -> list[str]:
+    pats = get()["execution"].get("allowed_patterns") or []
+    return [str(p) for p in pats if p]
 
 
 def aliases_path() -> Path:
@@ -240,6 +296,14 @@ def logs_dir() -> Path:
 
 def log_denied() -> bool:
     return bool(get().get("logging", {}).get("also_log_denied", True))
+
+
+def history_enabled() -> bool:
+    return bool(get().get("history", {}).get("enabled", True))
+
+
+def history_max_entries() -> int:
+    return int(get().get("history", {}).get("max_entries") or 30)
 
 
 def luks_enabled() -> bool:
