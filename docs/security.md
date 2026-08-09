@@ -1,76 +1,55 @@
 # Security features
 
-## Important limitation (IPs)
+## Critical: whitelist
 
-Discord bots **do not receive the end-user's IP** for normal messages.
-Traffic is Discord → your daemon. Therefore:
+If `discord.whitelist_enabled` is **false**, anyone who can post in the
+command channel can propose shell commands. With an empty
+`approval.allowed_user_ids`, any non-bot reactor can approve them.
 
-- We **cannot** ban "the IP that typed !ping"
-- We **cannot** detect "VPN IP" on the Discord path
-- We log and rate-limit by **Discord user id** instead
+That combination can mean **remote shell access to the machine** for
+anyone in the server/channel.
 
-If you later expose a public HTTP endpoint, IP bans belong there — not here.
-
-## Lock mode
-
-```bash
-python -m scripts.set_lock_password   # long Bitwarden password
-```
-
-```text
-!lock
-```
-
-Everything blocked until you **DM the bot**:
-
-```text
-unlock dein-langes-passwort
-```
-
-Wrong password → alarm on.
-
-Local clear (on the machine):
-
-```bash
-rm ~/Chronos/state/LOCKED ~/Chronos/state/ALARM
-```
-
-## Rate limit
-
-In `config.yml`:
-
-```yaml
-rate_limit:
-  enabled: true
-  max_commands: 20
-  window_seconds: 60
-  trigger_alarm: true
-```
-
-Exceeding the limit logs the user id and can raise alarm.
-
-## Whitelist
+**Turn the whitelist on** unless the channel is strictly private and trusted:
 
 ```yaml
 discord:
   whitelist_enabled: true
   allowed_user_ids:
     - YOUR_DISCORD_USER_ID
+approval:
+  allowed_user_ids:
+    - YOUR_DISCORD_USER_ID
 ```
+
+The daemon logs a clear warning on every start / `!reload` when whitelist is off.
+`!status` also shows `OFF` with a warning in that case.
+
+## Important limitation (IPs)
+
+Discord bots **do not receive the end-user's IP** for normal messages.
+We log and rate-limit by **Discord user id** instead.
+
+## Lock mode
+
+```bash
+python -m scripts.set_lock_password
+```
+
+```text
+!lock
+```
+
+Unlock only via **DM**: `unlock <password>`
+
+## Rate limit / allowlist / audit
+
+See `config.yml` for `rate_limit`, `execution.mode: allowlist`, and
+`discord.audit_channel_id`.
 
 ## Logs
 
 ```text
-logs/chronos-YYYY-MM-DD.log   # JSON lines
-!exportlog                    # upload recent logs as file
+logs/chronos-YYYY-MM-DD.log
+!exportlog
+!history
 ```
-
-You are logged too — intentional.
-
-## Screenshot
-
-```text
-!screenshot
-```
-
-Needs `grim` (Wayland/Bazzite recommended), or spectacle/scrot.
