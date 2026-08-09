@@ -27,6 +27,9 @@ BUILTINS = {
     "ss": "__SCREENSHOT__",
     "exportlog": "__EXPORT_LOG__",
     "logs": "__EXPORT_LOG__",
+    "history": "__HISTORY__",
+    "hist": "__HISTORY__",
+    "last": "__LAST__",
 }
 
 # Built-ins that take a payload: return "__TOKEN__:payload"
@@ -35,6 +38,8 @@ BUILTINS_WITH_ARGS = {
     "type": "__INPUT__",
     "key": "__INPUT__",
     "keys": "__INPUT__",
+    "mouse": "__MOUSE__",
+    "click": "__MOUSE__",
 }
 
 
@@ -91,7 +96,7 @@ def format_alias_list() -> str:
     lines.append("```")
     lines.append(
         "_Built-ins: `!help` `!aliases` `!reload` `!lock` `!unlock` `!status` "
-        "`!screenshot` `!exportlog` `!input` `!luksunlock`_"
+        "`!screenshot` `!exportlog` `!input` `!mouse` `!history` `!last` `!luksunlock`_"
     )
     return "\n".join(lines)
 
@@ -102,7 +107,7 @@ def format_help() -> str:
         f"**Chronos help** (prefix `{p}`)\n"
         f"```\n"
         f"{p}help / {p}commands     this message\n"
-        f"{p}status               lock / alarm / whitelist / luks\n"
+        f"{p}status               lock / alarm / whitelist / luks / mode\n"
         f"{p}aliases              list command shortcuts\n"
         f"{p}reload               reload config.yml + aliases.yml\n"
         f"{p}lock                 lock the machine (needs ✅)\n"
@@ -110,12 +115,17 @@ def format_help() -> str:
         f"{p}alarm                alarm status\n"
         f"{p}screenshot / {p}ss     capture screen (needs ✅)\n"
         f"{p}exportlog / {p}logs    upload recent logs (needs ✅)\n"
+        f"{p}history / {p}hist      recent executed commands\n"
+        f"{p}last                 show last executed command\n"
         f"{p}input <keys|text:…>  simulate keyboard (needs ✅)\n"
+        f"{p}mouse <spec>         simulate mouse (needs ✅)\n"
         f"{p}luksunlock           unlock configured LUKS volume\n"
         f"{p}<alias>              run an alias from aliases.yml\n"
         f"{p}cmd <shell>          run a raw shell command\n"
         f"{p}<any shell command>  same as cmd (after approval)\n"
         f"```\n"
         f"_Most powerful actions require a ✅ reaction. "
-        f"Unlock is only accepted in a DM to the bot._"
+        f"Unlock is only accepted in a DM to the bot._\n"
+        f"_If whitelist is off, anyone in the channel can propose commands — "
+        f"enable `discord.whitelist_enabled` in config.yml._"
     )
