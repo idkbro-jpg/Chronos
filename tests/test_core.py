@@ -1,0 +1,82 @@
+"""Lightweight unit tests — no Discord network required."""
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+class TestDiscordUtils(unittest.TestCase):
+    def test_escape_backticks(self):
+        from shared.discord_utils import escape_backticks, safe_inline
+
+        self.assertIn("\u200b", escape_backticks("a`b"))
+        self.assertNotIn("```", safe_inline("x```y", 50))
+
+
+class TestProtocol(unittest.TestCase):
+    def test_parse_help(self):
+        with mock.patch("shared.protocol.command_prefix", return_value="!"):
+            from shared.protocol import parse_command
+
+            self.assertEqual(parse_command("!help"), "__HELP__")
+            self.assertEqual(parse_command("!status"), "__STATUS__")
+            self.assertEqual(parse_command("!history"), "__HISTORY__")
+            self.assertEqual(parse_command("!last"), "__LAST__")
+            self.assertEqual(parse_command("!input alt p"), "__INPUT__:alt p")
+            self.assertEqual(parse_command("!mouse click"), "__MOUSE__:click")
+
+
+class TestPolicy(unittest.TestCase):
+    def test_unrestricted_allows(self):
+        with mock.patch("daemon.security.execution_mode", return_value="unrestricted"):
+            from daemon.security import command_allowed_by_policy
+
+            ok, _ = command_allowed_by_policy("rm -rf /")
+            self.assertTrue(ok)
+
+    def test_allowlist_blocks(self):
+        with mock.patch("daemon.security.execution_mode", return_value="allowlist"):
+            with mock.patch("daemon.security.allowed_patterns", return_value=["uptime"]):
+                from daemon.security import command_allowed_by_policy
+
+                ok, msg = command_allowed_by_policy("rm -rf /")
+                self.assertFalse(ok)
+                ok2, _ = command_allowed_by_policy("uptime")
+                self.assertTrue(ok2)
+
+
+class TestPasswordHash(unittest.TestCase):
+    def test_roundtrip(self):
+        from daemon.security import hash_password, verify_password
+
+        stored = hash_password("correct-horse-battery")
+        self.assertTrue(verify_password("correct-horse-battery", stored))
+        self.assertFalse(verify_password("wrong", stored))
+
+
+class TestHistory(unittest.TestCase):
+    def test_record_and_last(self):
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch("daemon.history.state_dir", return_value=Path(td)):
+                with mock.patch("daemon.history.history_enabled", return_value=True):
+                    with mock.patch("daemon.history.history_max_entries", return_value=10):
+                        from daemon import history
+
+                        history.record(1, "user", "echo hi", 0)
+                        last = history.last_command()
+                        self.assertIsNotNone(last)
+                        self.assertEqual(last["command"], "echo hi")
+
+
+if __name__ == "__main__":
+    os.environ.setdefault("DISCORD_TOKEN", "test-token-not-real")
+    os.environ.setdefault("COMMAND_CHANNEL_ID", "1")
+    unittest.main(verbosity=2)
