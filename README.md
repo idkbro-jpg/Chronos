@@ -55,6 +55,16 @@ cp .env.example .env   # fill token + channel id
 
 Enable **MESSAGE CONTENT INTENT**. Invite bot with send/read/reaction perms.
 
+### Update
+
+```bash
+cd ~/Chronos
+python update.py
+```
+
+Pulls from git, installs requirements, restarts `chronos-daemon.service`.  
+See `python update.py --help` for `--stash` / `--force` / `--no-restart`.
+
 ### systemd user service
 
 ```ini
