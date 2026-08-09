@@ -16,7 +16,8 @@ from daemon.approval import request_approval
 from daemon.executor import run_command
 from daemon.luks import unlock_luks
 from daemon.logger import log_event, export_recent
-from daemon.inputsim import simulate_input, simulate_mouse
+from daemon.inputsim import simulate_input
+from daemon.mouse import simulate_mouse
 from daemon.history import record as history_record, recent as history_recent, last_command
 from daemon.security import (
     is_locked,
@@ -115,7 +116,7 @@ async def _audit(text: str) -> None:
 
 
 async def _handle_luks_unlock(message: discord.Message):
-    summary = f"LUKS unlock device=`{luks_device()}` → mapper=`{luks_mapper_name()}`"
+    summary = f"LUKS unlock device=`{luks_device()}` \u2192 mapper=`{luks_mapper_name()}`"
     approved = await request_approval(message, summary, client)
     if not approved:
         return
