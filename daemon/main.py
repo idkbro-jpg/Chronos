@@ -5,7 +5,9 @@ Chronos Daemon – watches Discord, approves, executes.
 from __future__ import annotations
 
 import asyncio
+import signal
 import time
+from datetime import datetime, timezone
 
 import discord
 
@@ -14,7 +16,8 @@ from daemon.approval import request_approval
 from daemon.executor import run_command
 from daemon.luks import unlock_luks
 from daemon.logger import log_event, export_recent
-from daemon.inputsim import simulate_input
+from daemon.inputsim import simulate_input, simulate_mouse
+from daemon.history import record as history_record, recent as history_recent, last_command
 from daemon.security import (
     is_locked,
     is_alarm,
@@ -24,6 +27,7 @@ from daemon.security import (
     check_rate_limit,
     commands_blocked,
     check_lock_password,
+    command_allowed_by_policy,
 )
 from daemon.screenshot import take_screenshot
 from shared.protocol import parse_command, format_alias_list, format_help
@@ -39,6 +43,9 @@ from shared.config import (
     rate_limit_enabled,
     rate_limit_max,
     rate_limit_window,
+    audit_channel_id,
+    execution_mode,
+    history_enabled,
 )
 
 intents = discord.Intents.default()
@@ -48,6 +55,7 @@ intents.reactions = True
 client = discord.Client(intents=intents)
 
 _unlock_fail_until: dict[int, float] = {}
+_shutting_down = False
 
 
 def _chunk_text(text: str, limit: int) -> list[str]:
@@ -61,13 +69,8 @@ def _chunk_text(text: str, limit: int) -> list[str]:
 
 
 def _safe_code_block(text: str) -> str:
-    """
-    Prevent nested/broken code fences when command output itself contains ```.
-    Discord treats three backticks specially; replace sequences of 3+ with a safe form.
-    """
     if not text:
         return ""
-    # Replace runs of 3+ backticks so they cannot close the outer fence early
     return text.replace("```", "``\u200b`")
 
 
@@ -97,14 +100,29 @@ def _user_allowed(uid: int) -> bool:
     return uid in allowed_command_user_ids()
 
 
+async def _audit(text: str) -> None:
+    cid = audit_channel_id()
+    if not cid:
+        return
+    try:
+        channel = client.get_channel(cid)
+        if channel is None:
+            channel = await client.fetch_channel(cid)
+        if channel is not None:
+            await channel.send(text[:1900])
+    except Exception as e:
+        print(f"[Audit] failed: {e}")
+
+
 async def _handle_luks_unlock(message: discord.Message):
     summary = f"LUKS unlock device=`{luks_device()}` → mapper=`{luks_mapper_name()}`"
     approved = await request_approval(message, summary, client)
     if not approved:
         return
-    await message.add_reaction("🔓")
+    await message.add_reaction("\U0001f513")
     ok, msg = await asyncio.to_thread(unlock_luks)
-    await message.reply(f"{'🔓 **Success**' if ok else '🔒 **Failed**'}\n{msg}")
+    await message.reply(f"{'\U0001f513 **Success**' if ok else '\U0001f512 **Failed**'}\n{msg}")
+    await _audit(f"LUKS unlock by {message.author}: {'ok' if ok else 'failed'}")
 
 
 @client.event
@@ -114,11 +132,23 @@ async def on_ready():
     print(f"[Daemon] Logged in as {client.user} (ID: {client.user.id})")
     print(f"[Daemon] Watching channel ID: {COMMAND_CHANNEL_ID}")
     print(f"[Daemon] lock={is_locked()} alarm={is_alarm()} luks={luks_enabled()}")
+    print(f"[Daemon] execution.mode={execution_mode()}")
+    if not whitelist_enabled():
+        print(
+            "[Daemon] \u26a0\ufe0f  WHITELIST OFF \u2014 anyone in the command channel can propose "
+            "shell commands (after reaction approval). This can mean full control of "
+            "the machine if the daemon user has privileges. Enable whitelist in config.yml."
+        )
+    else:
+        print(f"[Daemon] whitelist ON \u2014 {len(allowed_command_user_ids())} user id(s)")
     print("[Daemon] Ready.")
 
 
 @client.event
 async def on_message(message: discord.Message):
+    if _shutting_down:
+        return
+
     if message.author == client.user:
         return
 
@@ -139,6 +169,7 @@ async def on_message(message: discord.Message):
                 _unlock_fail_until.pop(uid, None)
                 log_event("unlock_ok", user_id=uid, user_name=str(message.author))
                 await message.reply("Unlocked. Lock + alarm cleared.")
+                await _audit(f"Unlock OK by {message.author} ({uid})")
             else:
                 _unlock_fail_until[uid] = time.time() + 15
                 log_event(
@@ -149,6 +180,7 @@ async def on_message(message: discord.Message):
                 )
                 set_alarm(True, f"failed unlock DM from {uid}")
                 await message.reply("Wrong password. Alarm set. Try again in 15s.")
+                await _audit(f"Unlock FAIL by {message.author} ({uid}) \u2014 alarm set")
         else:
             await message.reply("DM only accepts: `unlock <password>`")
         return
@@ -168,7 +200,6 @@ async def on_message(message: discord.Message):
     if cmd is None:
         return
 
-    # Log only the Chronos command string — never continuous keyboard capture
     log_event("command", user_id=uid, user_name=uname, detail=cmd)
 
     if cmd == "__STATUS__":
@@ -177,14 +208,20 @@ async def on_message(message: discord.Message):
             if rate_limit_enabled()
             else "disabled"
         )
+        wl = (
+            f"`on` ({len(allowed_command_user_ids())} ids)"
+            if whitelist_enabled()
+            else "`OFF \u26a0\ufe0f anyone in channel can propose commands`"
+        )
         await message.reply(
             f"**Status**\n"
             f"locked: `{is_locked()}`\n"
             f"alarm: `{is_alarm()}`"
-            + (f" — {alarm_reason()}" if is_alarm() else "")
-            + f"\nwhitelist: `{whitelist_enabled()}`\n"
+            + (f" \u2014 {alarm_reason()}" if is_alarm() else "")
+            + f"\nwhitelist: {wl}\n"
+            f"execution mode: `{execution_mode()}`\n"
             f"luks: `{luks_enabled()}`"
-            + (f" (`{luks_device()}` → `{luks_mapper_name()}`)" if luks_enabled() else "")
+            + (f" (`{luks_device()}` \u2192 `{luks_mapper_name()}`)" if luks_enabled() else "")
             + f"\nrate limit: {rl}"
         )
         return
@@ -208,10 +245,42 @@ async def on_message(message: discord.Message):
         )
         return
 
-    ok_rl, rl_msg = check_rate_limit(uid)
+    if cmd == "__HISTORY__":
+        if not history_enabled():
+            await message.reply("History is disabled in config.")
+            return
+        entries = history_recent(15)
+        if not entries:
+            await message.reply("No history yet.")
+            return
+        lines = ["**Recent commands:**", "```"]
+        for e in entries:
+            ts = datetime.fromtimestamp(e.get("ts", 0), tz=timezone.utc).strftime("%H:%M:%S")
+            rc = e.get("returncode")
+            rc_s = f" rc={rc}" if rc is not None else ""
+            lines.append(f"{ts} {e.get('user_name', '?')}: {e.get('command', '')}{rc_s}")
+        lines.append("```")
+        await message.reply("\n".join(lines))
+        return
+
+    if cmd == "__LAST__":
+        entry = last_command()
+        if not entry:
+            await message.reply("No history yet.")
+            return
+        await message.reply(
+            f"**Last command** by `{entry.get('user_name')}`:\n"
+            f"```\n{entry.get('command')}\n```"
+            + (f"exit `{entry.get('returncode')}`" if entry.get("returncode") is not None else "")
+        )
+        return
+
+    ok_rl, rl_msg, retry_after = check_rate_limit(uid)
     if not ok_rl:
         log_event("rate_limited", user_id=uid, user_name=uname, detail=rl_msg)
-        await message.reply("⏳ Rate limit exceeded. Check `!status`.")
+        await message.reply(
+            f"\u23f3 Rate limit exceeded. Try again in ~**{retry_after}s**. Check `!status`."
+        )
         return
 
     if cmd == "__LOCK__":
@@ -221,9 +290,10 @@ async def on_message(message: discord.Message):
         set_locked(True)
         log_event("lock", user_id=uid, user_name=uname)
         await message.reply(
-            "🔒 **LOCKED.** All commands blocked.\n"
+            "\U0001f512 **LOCKED.** All commands blocked.\n"
             "Unlock: DM me `unlock <password>`"
         )
+        await _audit(f"LOCK by {uname} ({uid})")
         return
 
     blocked, why = commands_blocked()
@@ -234,7 +304,7 @@ async def on_message(message: discord.Message):
             user_name=uname,
             detail=cmd,
         )
-        await message.reply(f"🚫 {why}")
+        await message.reply(f"\U0001f6ab {why}")
         return
 
     if cmd == "__LIST_ALIASES__":
@@ -244,7 +314,7 @@ async def on_message(message: discord.Message):
     if cmd == "__RELOAD__":
         load_config(force=True)
         load_aliases(force=True)
-        await message.reply("🔄 Config + aliases reloaded.")
+        await message.reply("\U0001f504 Config + aliases reloaded.")
         return
 
     if cmd == "__LUKS_UNLOCK__":
@@ -288,9 +358,35 @@ async def on_message(message: discord.Message):
             extra={"ok": ok, "info": info[:200]},
         )
         if ok:
-            await message.reply(f"⌨️ {info}")
+            await message.reply(f"\u2328\ufe0f {info}")
         else:
-            await message.reply(f"⌨️ Failed: {info}")
+            await message.reply(f"\u2328\ufe0f Failed: {info}")
+        return
+
+    if cmd.startswith("__MOUSE__:"):
+        spec = cmd[len("__MOUSE__:"):].strip()
+        summary = f"mouse: {spec or '(empty)'}"
+        approved = await request_approval(message, summary, client)
+        if not approved:
+            return
+        ok, info = await asyncio.to_thread(simulate_mouse, spec)
+        log_event(
+            "mouse",
+            user_id=uid,
+            user_name=uname,
+            detail=spec,
+            extra={"ok": ok, "info": info[:200]},
+        )
+        if ok:
+            await message.reply(f"\U0001f5b1\ufe0f {info}")
+        else:
+            await message.reply(f"\U0001f5b1\ufe0f Failed: {info}")
+        return
+
+    allowed, policy_msg = command_allowed_by_policy(cmd)
+    if not allowed:
+        log_event("denied_policy", user_id=uid, user_name=uname, detail=cmd)
+        await message.reply(f"\U0001f6ab {policy_msg}")
         return
 
     print(f"[Daemon] {uname}: {cmd}")
@@ -299,7 +395,7 @@ async def on_message(message: discord.Message):
         log_event("denied_approval", user_id=uid, user_name=uname, detail=cmd)
         return
 
-    await message.add_reaction("⚙️")
+    await message.add_reaction("\u2699\ufe0f")
     returncode, stdout, stderr = await asyncio.to_thread(run_command, cmd)
     log_event(
         "executed",
@@ -308,11 +404,43 @@ async def on_message(message: discord.Message):
         detail=cmd,
         extra={"returncode": returncode},
     )
+    history_record(uid, uname, cmd, returncode)
+    await _audit(f"exec by {uname}: `{cmd[:200]}` \u2192 rc={returncode}")
     await _send_output(message, returncode, stdout, stderr)
 
 
+async def _close_gracefully() -> None:
+    global _shutting_down
+    _shutting_down = True
+    print("[Daemon] Shutting down\u2026")
+    log_event("shutdown", detail="signal")
+    try:
+        await client.close()
+    except Exception:
+        pass
+
+
 def main():
-    client.run(DISCORD_TOKEN)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    def _handle_sig(*_args):
+        print("[Daemon] signal received")
+        loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_close_gracefully()))
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, _handle_sig)
+        except NotImplementedError:
+            signal.signal(sig, lambda *_: _handle_sig())
+
+    try:
+        loop.run_until_complete(client.start(DISCORD_TOKEN))
+    except KeyboardInterrupt:
+        loop.run_until_complete(_close_gracefully())
+    finally:
+        loop.run_until_complete(client.close())
+        loop.close()
 
 
 if __name__ == "__main__":
