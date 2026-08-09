@@ -7,17 +7,26 @@
 discord:
   command_prefix: "!"
 
-  # true = nur IDs in allowed_user_ids dürfen Commands
+  # ⚠️  SECURITY: if false, ANYONE who can post in the command channel
+  # can propose shell commands on this machine (still needs ✅ approval,
+  # but approval.allowed_user_ids is also empty by default → any reactor works).
+  # Strongly recommended for anything beyond a private test channel:
+  #   whitelist_enabled: true
+  #   allowed_user_ids: [YOUR_DISCORD_USER_ID]
   whitelist_enabled: false
   allowed_user_ids: []
   # Beispiel:
   # allowed_user_ids:
   #   - 123456789012345678
 
+  # Optional: mirror critical events (exec, lock, unlock, luks) here. 0 = off.
+  audit_channel_id: 0
+
 approval:
   timeout_seconds: 60
   approve_emoji: "✅"
   deny_emoji: "❌"
+  # Empty = any non-bot user may approve. Restrict in shared servers.
   allowed_user_ids: []
 
 execution:
@@ -25,6 +34,18 @@ execution:
   use_shell: true
   max_output_chars: 1800
   strip_ansi: true
+  # unrestricted = any approved shell command (powerful)
+  # allowlist = only commands matching allowed_patterns (plus aliases expanded first)
+  mode: unrestricted
+  # Patterns: plain substring, glob (* ?), or re:REGEX
+  allowed_patterns: []
+  # Beispiel allowlist:
+  # mode: allowlist
+  # allowed_patterns:
+  #   - "uptime"
+  #   - "df -h"
+  #   - "systemctl --user status *"
+  #   - "re:^free\\b"
 
 # ------------------------------------------------------------
 # Rate limit (pro Discord-User-ID)
@@ -57,6 +78,10 @@ logging:
   dir: "logs"
   # Eine Datei pro Tag: logs/chronos-YYYY-MM-DD.log
   also_log_denied: true
+
+history:
+  enabled: true
+  max_entries: 30
 
 files:
   aliases: aliases.yml
