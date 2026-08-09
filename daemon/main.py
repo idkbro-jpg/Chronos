@@ -26,7 +26,7 @@ from daemon.security import (
     check_lock_password,
 )
 from daemon.screenshot import take_screenshot
-from shared.protocol import parse_command, format_alias_list
+from shared.protocol import parse_command, format_alias_list, format_help
 from shared.aliases import load_aliases
 from shared.config import (
     load_config,
@@ -36,6 +36,9 @@ from shared.config import (
     luks_enabled,
     luks_device,
     luks_mapper_name,
+    rate_limit_enabled,
+    rate_limit_max,
+    rate_limit_window,
 )
 
 intents = discord.Intents.default()
@@ -57,6 +60,17 @@ def _chunk_text(text: str, limit: int) -> list[str]:
     return chunks
 
 
+def _safe_code_block(text: str) -> str:
+    """
+    Prevent nested/broken code fences when command output itself contains ```.
+    Discord treats three backticks specially; replace sequences of 3+ with a safe form.
+    """
+    if not text:
+        return ""
+    # Replace runs of 3+ backticks so they cannot close the outer fence early
+    return text.replace("```", "``\u200b`")
+
+
 async def _send_output(message: discord.Message, returncode: int, stdout: str, stderr: str):
     limit = max_output_chars()
     await message.reply(f"**Exit code:** `{returncode}`")
@@ -64,12 +78,14 @@ async def _send_output(message: discord.Message, returncode: int, stdout: str, s
     if stdout:
         for i, chunk in enumerate(_chunk_text(stdout, limit)):
             label = "**stdout:**" if i == 0 else f"**stdout (cont. {i + 1}):**"
-            await message.reply(f"{label}\n```\n{chunk}\n```")
+            safe = _safe_code_block(chunk)
+            await message.reply(f"{label}\n```\n{safe}\n```")
 
     if stderr:
         for i, chunk in enumerate(_chunk_text(stderr, limit)):
             label = "**stderr:**" if i == 0 else f"**stderr (cont. {i + 1}):**"
-            await message.reply(f"{label}\n```\n{chunk}\n```")
+            safe = _safe_code_block(chunk)
+            await message.reply(f"{label}\n```\n{safe}\n```")
 
     if not stdout and not stderr:
         await message.reply("_No output_")
@@ -156,13 +172,25 @@ async def on_message(message: discord.Message):
     log_event("command", user_id=uid, user_name=uname, detail=cmd)
 
     if cmd == "__STATUS__":
+        rl = (
+            f"`{rate_limit_max()}` / `{rate_limit_window()}s`"
+            if rate_limit_enabled()
+            else "disabled"
+        )
         await message.reply(
             f"**Status**\n"
             f"locked: `{is_locked()}`\n"
             f"alarm: `{is_alarm()}`"
             + (f" — {alarm_reason()}" if is_alarm() else "")
-            + f"\nwhitelist: `{whitelist_enabled()}`\nluks: `{luks_enabled()}`"
+            + f"\nwhitelist: `{whitelist_enabled()}`\n"
+            f"luks: `{luks_enabled()}`"
+            + (f" (`{luks_device()}` → `{luks_mapper_name()}`)" if luks_enabled() else "")
+            + f"\nrate limit: {rl}"
         )
+        return
+
+    if cmd == "__HELP__":
+        await message.reply(format_help())
         return
 
     if cmd == "__UNLOCK__":
