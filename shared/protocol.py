@@ -10,6 +10,8 @@ BUILTINS = {
     "aliases": "__LIST_ALIASES__",
     "alias": "__LIST_ALIASES__",
     "listaliases": "__LIST_ALIASES__",
+    "help": "__HELP__",
+    "commands": "__HELP__",
     "reload": "__RELOAD__",
     "reloadaliases": "__RELOAD__",
     "reloadconfig": "__RELOAD__",
@@ -88,7 +90,32 @@ def format_alias_list() -> str:
         lines.append("(none)")
     lines.append("```")
     lines.append(
-        "_Built-ins: `!aliases` `!reload` `!lock` `!unlock` `!status` "
+        "_Built-ins: `!help` `!aliases` `!reload` `!lock` `!unlock` `!status` "
         "`!screenshot` `!exportlog` `!input` `!luksunlock`_"
     )
     return "\n".join(lines)
+
+
+def format_help() -> str:
+    p = command_prefix()
+    return (
+        f"**Chronos help** (prefix `{p}`)\n"
+        f"```\n"
+        f"{p}help / {p}commands     this message\n"
+        f"{p}status               lock / alarm / whitelist / luks\n"
+        f"{p}aliases              list command shortcuts\n"
+        f"{p}reload               reload config.yml + aliases.yml\n"
+        f"{p}lock                 lock the machine (needs ✅)\n"
+        f"{p}unlock               how to unlock (DM only)\n"
+        f"{p}alarm                alarm status\n"
+        f"{p}screenshot / {p}ss     capture screen (needs ✅)\n"
+        f"{p}exportlog / {p}logs    upload recent logs (needs ✅)\n"
+        f"{p}input <keys|text:…>  simulate keyboard (needs ✅)\n"
+        f"{p}luksunlock           unlock configured LUKS volume\n"
+        f"{p}<alias>              run an alias from aliases.yml\n"
+        f"{p}cmd <shell>          run a raw shell command\n"
+        f"{p}<any shell command>  same as cmd (after approval)\n"
+        f"```\n"
+        f"_Most powerful actions require a ✅ reaction. "
+        f"Unlock is only accepted in a DM to the bot._"
+    )
