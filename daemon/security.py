@@ -172,7 +172,10 @@ def _save_rate_hits() -> None:
             recent = [t for t in q if now - t <= window]
             if recent:
                 out[str(uid)] = recent
-        path.write_text(json.dumps(out), encoding="utf-8")
+        # Atomic write so a crash mid-write cannot leave empty/corrupt JSON
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(out), encoding="utf-8")
+        tmp.replace(path)
     except Exception:
         pass
 
@@ -224,6 +227,14 @@ def command_allowed_by_policy(command: str) -> tuple[bool, str]:
     """
     When execution.mode is allowlist, only commands matching allowed_patterns may run.
     Builtins are handled before this is called.
+
+    Pattern kinds:
+      - plain string without * or ?  → exact full-string match
+      - glob (* and ?)               → full-string glob match
+      - re:REGEX                     → re.search on the whole command
+
+    Intentionally no loose substring match: a pattern of \"uptime\" must not
+    allow \"rm -rf /; uptime\". Use \"uptime*\" or \"re:^uptime\\b\" for prefixes.
     """
     mode = execution_mode()
     if mode != "allowlist":
@@ -235,22 +246,22 @@ def command_allowed_by_policy(command: str) -> tuple[bool, str]:
 
     cmd = command.strip()
     for pat in patterns:
+        if not pat:
+            continue
         if pat.startswith("re:"):
             try:
                 if re.search(pat[3:], cmd):
                     return True, ""
             except re.error:
                 continue
-        else:
-            try:
-                if re.fullmatch(
-                    re.escape(pat).replace(r"\*", ".*").replace(r"\?", "."),
-                    cmd,
-                ):
-                    return True, ""
-            except re.error:
-                continue
-            if pat in cmd:
-                return True, ""
+            continue
 
-    return False, f"command not in allowlist (mode=allowlist)"
+        # Glob / exact: always fullmatch after translating * and ?
+        try:
+            regex = re.escape(pat).replace(r"\*", ".*").replace(r"\?", ".")
+            if re.fullmatch(regex, cmd):
+                return True, ""
+        except re.error:
+            continue
+
+    return False, "command not in allowlist (mode=allowlist)"
