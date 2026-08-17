@@ -1,5 +1,24 @@
 # Chronos – Internal AI Improvement Log
 
+## 2026-08-17 – Allowlist + atomic state
+
+### Read-first review
+- Full pass over daemon/, shared/, tests/, update.py, docs.
+- Main risk found in allowlist: `if pat in cmd` substring fallback could authorize dangerous commands that merely contain an allowed token.
+- State JSON writes were non-atomic (history + rate_limit).
+
+### Implemented
+1. Removed substring allowlist fallback; exact / glob fullmatch / `re:` only.
+2. Atomic writes for history.json and rate_limit.json.
+3. History display shows date when not today (UTC).
+4. config.yml comment fix; expanded unit tests.
+5. Public + internal changelog entries.
+
+### Breakage check
+- Default `execution.mode: unrestricted` → no behaviour change.
+- Allowlist users who depended on substring must update patterns (documented).
+- Atomic rename is same-dir → safe on typical Linux filesystems.
+
 ## 2026-08-09 – Full hardening pass
 
 ### Implemented and pushed
