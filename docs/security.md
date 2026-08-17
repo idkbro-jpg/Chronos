@@ -46,6 +46,16 @@ Unlock only via **DM**: `unlock <password>`
 See `config.yml` for `rate_limit`, `execution.mode: allowlist`, and
 `discord.audit_channel_id`.
 
+Allowlist patterns (when `execution.mode: allowlist`):
+
+- plain string without `*` / `?` → **exact** full command match
+- glob with `*` / `?` → full-string glob
+- `re:REGEX` → `re.search` on the command string
+
+There is **no** loose substring match. A pattern of `uptime` does not
+authorize `rm -rf /; uptime`. Prefer `uptime*` or `re:^uptime\b` when you
+need prefixes.
+
 ## Logs
 
 ```text

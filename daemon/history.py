@@ -32,8 +32,13 @@ def _load() -> list[dict]:
 
 
 def _save(entries: list[dict]) -> None:
+    """Atomic write (temp file + rename) to avoid torn JSON on crash."""
     try:
-        _path().write_text(json.dumps(entries[-history_max_entries():]), encoding="utf-8")
+        path = _path()
+        payload = json.dumps(entries[-history_max_entries():], ensure_ascii=False)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(payload, encoding="utf-8")
+        tmp.replace(path)
     except Exception:
         pass
 
