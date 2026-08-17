@@ -37,7 +37,11 @@ execution:
   # unrestricted = any approved shell command (powerful)
   # allowlist = only commands matching allowed_patterns (plus aliases expanded first)
   mode: unrestricted
-  # Patterns: plain substring, glob (* ?), or re:REGEX
+  # Patterns (full-string match unless re:):
+  #   plain string (no * ?) → exact match only
+  #   glob with * or ?     → full-string glob
+  #   re:REGEX             → re.search on the command
+  # No loose substring match (prevents "uptime" from allowing "rm …; uptime").
   allowed_patterns: []
   # Beispiel allowlist:
   # mode: allowlist

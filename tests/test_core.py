@@ -52,6 +52,29 @@ class TestPolicy(unittest.TestCase):
                 ok2, _ = command_allowed_by_policy("uptime")
                 self.assertTrue(ok2)
 
+    def test_allowlist_no_substring_injection(self):
+        """Plain pattern must not match as a loose substring."""
+        with mock.patch("daemon.security.execution_mode", return_value="allowlist"):
+            with mock.patch("daemon.security.allowed_patterns", return_value=["uptime"]):
+                from daemon.security import command_allowed_by_policy
+
+                ok, _ = command_allowed_by_policy("rm -rf /; uptime")
+                self.assertFalse(ok)
+                ok_g, _ = command_allowed_by_policy("uptime -p")
+                self.assertFalse(ok_g)
+
+    def test_allowlist_glob_and_regex(self):
+        with mock.patch("daemon.security.execution_mode", return_value="allowlist"):
+            with mock.patch(
+                "daemon.security.allowed_patterns",
+                return_value=["uptime*", "re:^df\\b"],
+            ):
+                from daemon.security import command_allowed_by_policy
+
+                self.assertTrue(command_allowed_by_policy("uptime -p")[0])
+                self.assertTrue(command_allowed_by_policy("df -h")[0])
+                self.assertFalse(command_allowed_by_policy("echo uptime")[0])
+
 
 class TestPasswordHash(unittest.TestCase):
     def test_roundtrip(self):
