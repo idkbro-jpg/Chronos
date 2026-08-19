@@ -227,6 +227,19 @@ async def on_message(message: discord.Message):
         )
         return
 
+    if cmd == "__PING__":
+        # Latency from Discord message timestamp → now (UTC)
+        created = message.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        lag_ms = int((datetime.now(timezone.utc) - created).total_seconds() * 1000)
+        ws = client.latency
+        ws_ms = int(ws * 1000) if ws is not None and ws >= 0 else -1
+        await message.reply(
+            f"Pong · message lag `~{lag_ms}ms` · gateway latency `~{ws_ms}ms`"
+        )
+        return
+
     if cmd == "__HELP__":
         await message.reply(format_help())
         return

@@ -23,6 +23,7 @@ BUILTINS = {
     "unlock": "__UNLOCK__",
     "alarm": "__ALARM_STATUS__",
     "status": "__STATUS__",
+    "ping": "__PING__",
     "screenshot": "__SCREENSHOT__",
     "ss": "__SCREENSHOT__",
     "exportlog": "__EXPORT_LOG__",
@@ -95,7 +96,7 @@ def format_alias_list() -> str:
         lines.append("(none)")
     lines.append("```")
     lines.append(
-        "_Built-ins: `!help` `!aliases` `!reload` `!lock` `!unlock` `!status` "
+        "_Built-ins: `!help` `!ping` `!aliases` `!reload` `!lock` `!unlock` `!status` "
         "`!screenshot` `!exportlog` `!input` `!mouse` `!history` `!last` `!luksunlock`_"
     )
     return "\n".join(lines)
@@ -107,6 +108,7 @@ def format_help() -> str:
         f"**Chronos help** (prefix `{p}`)\n"
         f"```\n"
         f"{p}help / {p}commands     this message\n"
+        f"{p}ping                 latency / liveness check\n"
         f"{p}status               lock / alarm / whitelist / luks / mode\n"
         f"{p}aliases              list command shortcuts\n"
         f"{p}reload               reload config.yml + aliases.yml\n"

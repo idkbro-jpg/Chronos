@@ -1,5 +1,23 @@
 # Chronos changelog
 
+## 2026-08-19 – thread-safe state + approval robustness + !ping
+
+### Robustness
+- **Thread-safe history and rate-limit persistence**: `threading.Lock` around load/save so concurrent work from `asyncio.to_thread` cannot tear `state/history.json` or race hit counts in `state/rate_limit.json`.
+- **Approval reactions**: if the bot cannot add ✅/❌ (missing *Add Reactions* / related perms), reply with a clear error and do **not** execute.
+- **Logger flush** after each append so recent lines survive hard process kills.
+
+### UX
+- **`!ping`**: message lag + gateway latency, no approval, before rate limit (same class as `!status` / `!help`).
+
+### Docs & tests
+- Help / alias footer mention `!ping`.
+- Unit test for `!ping` parse.
+
+### Notes
+- No change to default security posture or command semantics for shell execution.
+- Existing installs keep working; locks only hold during short disk operations.
+
 ## 2026-08-17 – allowlist hardening + state write safety
 
 ### Security

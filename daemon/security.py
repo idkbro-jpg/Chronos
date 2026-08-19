@@ -11,6 +11,7 @@ import hashlib
 import os
 import re
 import secrets
+import threading
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -26,6 +27,8 @@ from shared.config import (
     execution_mode,
     allowed_patterns,
 )
+
+_rate_lock = threading.Lock()
 
 
 def _ensure_state_dir() -> Path:
@@ -127,7 +130,7 @@ def _rate_limit_path() -> Path:
     return _ensure_state_dir() / "rate_limit.json"
 
 
-def _load_rate_hits() -> None:
+def _load_rate_hits_unlocked() -> None:
     global _hits_loaded
     if _hits_loaded:
         return
@@ -160,7 +163,7 @@ def _load_rate_hits() -> None:
         pass
 
 
-def _save_rate_hits() -> None:
+def _save_rate_hits_unlocked() -> None:
     path = _rate_limit_path()
     try:
         import json
@@ -188,27 +191,28 @@ def check_rate_limit(user_id: int) -> tuple[bool, str, int]:
     if not rate_limit_enabled():
         return True, "", 0
 
-    _load_rate_hits()
+    with _rate_lock:
+        _load_rate_hits_unlocked()
 
-    now = time.time()
-    window = rate_limit_window()
-    limit = rate_limit_max()
-    q = _hits[user_id]
+        now = time.time()
+        window = rate_limit_window()
+        limit = rate_limit_max()
+        q = _hits[user_id]
 
-    while q and now - q[0] > window:
-        q.popleft()
+        while q and now - q[0] > window:
+            q.popleft()
 
-    if len(q) >= limit:
-        oldest = q[0] if q else now
-        retry_after = max(1, int(window - (now - oldest)) + 1)
-        msg = f"rate limit: {limit}/{window}s exceeded by user {user_id}"
-        if rate_limit_triggers_alarm():
-            set_alarm(True, msg)
-        return False, msg, retry_after
+        if len(q) >= limit:
+            oldest = q[0] if q else now
+            retry_after = max(1, int(window - (now - oldest)) + 1)
+            msg = f"rate limit: {limit}/{window}s exceeded by user {user_id}"
+            if rate_limit_triggers_alarm():
+                set_alarm(True, msg)
+            return False, msg, retry_after
 
-    q.append(now)
-    _save_rate_hits()
-    return True, "", 0
+        q.append(now)
+        _save_rate_hits_unlocked()
+        return True, "", 0
 
 
 def commands_blocked() -> tuple[bool, str]:

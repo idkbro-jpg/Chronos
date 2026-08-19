@@ -28,6 +28,7 @@ class TestProtocol(unittest.TestCase):
 
             self.assertEqual(parse_command("!help"), "__HELP__")
             self.assertEqual(parse_command("!status"), "__STATUS__")
+            self.assertEqual(parse_command("!ping"), "__PING__")
             self.assertEqual(parse_command("!history"), "__HISTORY__")
             self.assertEqual(parse_command("!last"), "__LAST__")
             self.assertEqual(parse_command("!input alt p"), "__INPUT__:alt p")

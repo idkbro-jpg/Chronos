@@ -1,5 +1,26 @@
 # Chronos – Internal AI Improvement Log
 
+## 2026-08-19 – Thread safety + approval + ping
+
+### Read-first review
+- Full pass over daemon/, shared/, tests/, update.py, docs, bot/.
+- Concurrent `asyncio.to_thread` (long shell / input / screenshot) can interleave with the next Discord message → history load-modify-save and rate-limit deque updates were racy.
+- Missing reaction permissions caused unhandled HTTPException in approval flow.
+- No lightweight liveness command (Chronos-pi already has ping).
+
+### Implemented
+1. `threading.Lock` in `daemon/history.py` and `daemon/security.py` for all load/save/check paths.
+2. Approval: catch `discord.HTTPException` on `add_reaction`, edit prompt with guidance, return False.
+3. `!ping` → message lag ms + gateway latency; handled before rate limit like status/help.
+4. Logger `flush()` after each JSONL line.
+5. Help/alias footer + unit test + public/internal changelogs.
+
+### Breakage check
+- Locks held only around short in-memory + disk ops (not across Discord awaits) → no deadlock with event loop.
+- Default unrestricted mode and whitelist defaults unchanged.
+- Atomic rename behaviour preserved; lock serializes concurrent renames.
+- Existing commands and approval semantics unchanged when permissions are present.
+
 ## 2026-08-17 – Allowlist + atomic state
 
 ### Read-first review

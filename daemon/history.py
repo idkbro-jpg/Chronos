@@ -6,10 +6,13 @@ Persisted under state/ so it survives restarts.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 
 from shared.config import state_dir, history_enabled, history_max_entries
+
+_lock = threading.Lock()
 
 
 def _path() -> Path:
@@ -18,7 +21,7 @@ def _path() -> Path:
     return d / "history.json"
 
 
-def _load() -> list[dict]:
+def _load_unlocked() -> list[dict]:
     path = _path()
     if not path.exists():
         return []
@@ -31,7 +34,7 @@ def _load() -> list[dict]:
     return []
 
 
-def _save(entries: list[dict]) -> None:
+def _save_unlocked(entries: list[dict]) -> None:
     """Atomic write (temp file + rename) to avoid torn JSON on crash."""
     try:
         path = _path()
@@ -46,24 +49,26 @@ def _save(entries: list[dict]) -> None:
 def record(user_id: int, user_name: str, command: str, returncode: int | None = None) -> None:
     if not history_enabled():
         return
-    entries = _load()
-    entries.append(
-        {
-            "ts": time.time(),
-            "user_id": user_id,
-            "user_name": user_name,
-            "command": command[:500],
-            "returncode": returncode,
-        }
-    )
-    _save(entries)
+    with _lock:
+        entries = _load_unlocked()
+        entries.append(
+            {
+                "ts": time.time(),
+                "user_id": user_id,
+                "user_name": user_name,
+                "command": command[:500],
+                "returncode": returncode,
+            }
+        )
+        _save_unlocked(entries)
 
 
 def recent(n: int = 10) -> list[dict]:
     if not history_enabled():
         return []
     n = max(1, min(n, history_max_entries()))
-    return _load()[-n:]
+    with _lock:
+        return _load_unlocked()[-n:]
 
 
 def last_command() -> dict | None:

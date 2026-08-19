@@ -34,8 +34,21 @@ async def request_approval(
         f"(Timeout: {timeout}s)"
     )
 
-    await prompt.add_reaction(ok)
-    await prompt.add_reaction(no)
+    try:
+        await prompt.add_reaction(ok)
+        await prompt.add_reaction(no)
+    except discord.HTTPException as e:
+        try:
+            await prompt.edit(
+                content=(
+                    f"Cannot add approval reactions ({e.status}). "
+                    f"Grant the bot **Add Reactions** (and **Read Message History**) "
+                    f"in this channel. Command was **not** executed."
+                )
+            )
+        except discord.HTTPException:
+            pass
+        return False
 
     def check(reaction: discord.Reaction, user: discord.User) -> bool:
         if user.bot:
