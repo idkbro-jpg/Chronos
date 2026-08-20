@@ -47,6 +47,7 @@ from shared.config import (
     audit_channel_id,
     execution_mode,
     history_enabled,
+    command_prefix,
 )
 
 intents = discord.Intents.default()
@@ -150,10 +151,21 @@ async def on_message(message: discord.Message):
     if _shutting_down:
         return
 
-    if message.author == client.user:
-        return
+    # Allow the bot's own messages ONLY when they look like a real command.
+    # This enables the Android Send Mode extension (same bot token).
+    # Normal bot replies never start with the command prefix → still ignored.
+    is_self = message.author == client.user
+    if is_self:
+        content = (message.content or "").strip()
+        prefix = command_prefix()
+        if not content.startswith(prefix):
+            return
+        # Trusted extension command from the bot itself → continue
 
     if isinstance(message.channel, discord.DMChannel):
+        # DMs from the bot itself are never useful; ignore
+        if is_self:
+            return
         content = message.content.strip()
         low = content.lower()
         if low.startswith("unlock ") or low.startswith("!unlock "):
@@ -192,7 +204,8 @@ async def on_message(message: discord.Message):
     uid = message.author.id
     uname = str(message.author)
 
-    if not _user_allowed(uid):
+    # Whitelist: skip for trusted self-commands from the Android extension
+    if not is_self and not _user_allowed(uid):
         log_event("denied", user_id=uid, user_name=uname, detail="not on whitelist")
         await message.reply("Not on whitelist.")
         return
@@ -254,7 +267,7 @@ async def on_message(message: discord.Message):
 
     if cmd == "__ALARM_STATUS__":
         await message.reply(
-            f"alarm=`{is_alarm()}` reason=`{alarm_reason() or '-'}`\n"
+            f"alarm=`{is_alarm()}` reason=`{alarm_reason() or '-'}\n"
             f"Clear via DM `unlock <password>` or delete `state/ALARM`."
         )
         return
