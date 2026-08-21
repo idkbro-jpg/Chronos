@@ -1,29 +1,19 @@
 # Chronos Receiver (Beta)
 
-Receive-Mode auf dem Xiaomi.
+- `?status` / `?ping` **lokal** (ohne Discord)
+- CMD-Zeile mit Input + Output
+- Listening: pollt Discord auf `?`… und antwortet
+- Zwei Channel-IDs: normal + Backend
+- Andere Commands (z.B. `?WoL`, `!lock`) können über Discord gesendet werden
 
-**Aktuell nur:**
+## Settings
 
-- `?status` \u2013 Receiver-Status + ob der Laptop erreichbar wirkt
-- `?ping` \u2013 Erreichbarkeitstest (IP des Laptops)
-
-Kein WoL, kein Heartbeat-System, kein Boot-Steuerung (kommt sp\u00e4ter).
-
-## Settings in der App
-
-- Bot Token (gleicher wie Daemon)
-- Command Channel ID
-- **Laptop IP** (LAN oder Tailscale)
-- Timeout in Sekunden (Standard 30)
-
-## Verhalten
-
-- App pollt den Channel auf Nachrichten mit Prefix `?`
-- Bei `?status` / `?ping` wird die Laptop-IP gepr\u00fcft
-- Immer eine Antwort im Channel:
-  - online + ungef\u00e4hre ms **oder**
-  - Timeout-Hinweis (Internet/Netz pr\u00fcfen)
+- Bot Token
+- Channel ID
+- Backend Channel ID (optional)
+- Laptop IP
+- Timeout (Sekunden)
 
 ## Build
 
-Android Studio \u2192 Ordner `receiver/` \u00f6ffnen \u2192 Build APK (wie bei Remote).
+Android Studio → `receiver/` öffnen → Build APK

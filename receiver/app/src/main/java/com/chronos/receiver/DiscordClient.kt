@@ -8,10 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-class DiscordClient(
-    private val botToken: String,
-    private val channelId: String
-) {
+class DiscordClient(private val botToken: String) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -19,15 +16,15 @@ class DiscordClient(
 
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
 
-    fun sendMessage(content: String): Result<Unit> {
+    fun sendMessage(channelId: String, content: String): Result<Unit> {
         if (botToken.isBlank() || channelId.isBlank()) {
-            return Result.failure(IllegalStateException("Token or Channel-ID missing"))
+            return Result.failure(IllegalStateException("Token or Channel missing"))
         }
         val body = JSONObject().put("content", content).toString()
         val request = Request.Builder()
             .url("https://discord.com/api/v10/channels/$channelId/messages")
             .addHeader("Authorization", "Bot $botToken")
-            .addHeader("User-Agent", "ChronosReceiver/0.1.0-beta")
+            .addHeader("User-Agent", "ChronosReceiver/0.2.0-beta")
             .post(body.toRequestBody(jsonMedia))
             .build()
         return try {
@@ -40,21 +37,20 @@ class DiscordClient(
         }
     }
 
-    /** Recent messages, newest first. */
-    fun fetchRecentMessages(limit: Int = 10): Result<List<DiscordMessage>> {
+    fun fetchRecent(channelId: String, limit: Int = 15): Result<List<DiscordMessage>> {
         if (botToken.isBlank() || channelId.isBlank()) {
-            return Result.failure(IllegalStateException("Token or Channel-ID missing"))
+            return Result.failure(IllegalStateException("Token or Channel missing"))
         }
         val request = Request.Builder()
             .url("https://discord.com/api/v10/channels/$channelId/messages?limit=$limit")
             .addHeader("Authorization", "Bot $botToken")
-            .addHeader("User-Agent", "ChronosReceiver/0.1.0-beta")
+            .addHeader("User-Agent", "ChronosReceiver/0.2.0-beta")
             .get()
             .build()
         return try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    return Result.failure(Exception("Discord ${response.code}: ${response.body?.string()}"))
+                    return Result.failure(Exception("Discord ${response.code}"))
                 }
                 val arr = JSONArray(response.body?.string() ?: "[]")
                 val list = mutableListOf<DiscordMessage>()
