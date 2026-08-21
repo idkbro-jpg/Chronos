@@ -5,10 +5,13 @@ Simple rotating-ish daily log files.
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 from shared.config import logging_enabled, logs_dir, log_denied
+
+_lock = threading.Lock()
 
 
 def _today_path() -> Path:
@@ -42,9 +45,11 @@ def log_event(
         record["extra"] = extra
 
     path = _today_path()
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        f.flush()
+    line = json.dumps(record, ensure_ascii=False) + "\n"
+    with _lock:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line)
+            f.flush()
 
 
 def export_recent(max_bytes: int = 7_000_000) -> Path | None:
