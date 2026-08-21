@@ -1,5 +1,16 @@
 # Chronos changelog
 
+## 2026-08-21 – logger lock + timeout process-group kill + error guard
+
+### Robustness
+- **Thread-safe logger**: `threading.Lock` around append + flush so concurrent `asyncio.to_thread` work cannot interleave JSONL lines in daily log files.
+- **Command timeout kills process group**: executor starts a new session (`start_new_session=True`) and on timeout sends SIGTERM (then SIGKILL) to the whole group. Prevents orphaned children from `shell=True` pipelines after a timeout.
+- **Unhandled exception guard** in `on_message`: unexpected errors are logged (`kind=error`) and the user gets a short reply instead of a silent failure.
+
+### Notes
+- No change to default security posture, allowlist rules, or command semantics.
+- Timeouts still return exit code 1 with a clear stderr message; partial stdout captured when available.
+
 ## 2026-08-19 – thread-safe state + approval robustness + !ping
 
 ### Robustness
