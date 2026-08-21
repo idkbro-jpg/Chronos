@@ -13,7 +13,6 @@ class Prefs(context: Context) {
         get() = prefs.getString(KEY_CHANNEL, "") ?: ""
         set(value) = prefs.edit().putString(KEY_CHANNEL, value.trim()).apply()
 
-    /** Optional: kritische Commands (!lock, ?status, ?ping) */
     var backendChannelId: String
         get() = prefs.getString(KEY_BACKEND, "") ?: ""
         set(value) = prefs.edit().putString(KEY_BACKEND, value.trim()).apply()
@@ -24,7 +23,16 @@ class Prefs(context: Context) {
     fun channelFor(command: String): String {
         val c = command.trim().lowercase()
         val backend = backendChannelId
-        if (backend.isNotBlank() && (c.startsWith("!lock") || c.startsWith("?status") || c.startsWith("?ping") || c == "!lock" || c == "?status" || c == "?ping")) {
+        if (backend.isNotBlank() && (
+                c.startsWith("!lock") ||
+                c.startsWith("!sudomode") ||
+                c.startsWith("!sudo") ||
+                c.startsWith("?status") ||
+                c.startsWith("?ping") ||
+                c == "!lock" || c == "!sudomode" || c == "!sudo" ||
+                c == "?status" || c == "?ping"
+            )
+        ) {
             return backend
         }
         return channelId
