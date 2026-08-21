@@ -1,5 +1,33 @@
 # Chronos – Internal AI Improvement Log
 
+## 2026-08-21 – Full read-through + robustness
+
+### Read-first review
+- Complete pass over daemon/, shared/, tests/, update.py, docs/, bot/, android/, scripts/, config, aliases, requirements, changelogs.
+- Also glanced at Chronos-pi (separate single-file bot) for consistency notes; no changes pushed there this pass.
+- Confirmed prior hardening (allowlist exact/glob/re, atomic state writes, history/rate locks, approval HTTPException handling, whitelist warnings) is intact.
+
+### Risks identified
+1. Concurrent `log_event` from multiple `asyncio.to_thread` workers could interleave JSONL writes (no lock).
+2. `subprocess.run(..., shell=True, timeout=…)` kills the shell but not always the whole process group → orphaned children after timeout.
+3. Unexpected exceptions inside the long `on_message` chain left the user without a reply and only a console traceback.
+
+### Implemented
+1. `threading.Lock` in `daemon/logger.py` around open/write/flush.
+2. `daemon/executor.py` rewritten to `Popen` + `start_new_session=True` + SIGTERM/SIGKILL process group on timeout; partial stdout still returned when available.
+3. `on_message` parses then calls `_dispatch_command` under try/except; logs `kind=error` and replies with a short internal-error message.
+
+### Breakage check (fact-checked)
+- Locks held only for short disk ops → no deadlock with the event loop.
+- Default `execution.mode: unrestricted`, whitelist defaults, approval semantics, rate-limit behaviour unchanged.
+- Timeout path still returns `(1, stdout_partial, "Command timed out after Ns")` — same contract for callers.
+- Existing unit tests still cover protocol/policy/history/password; no test changes required for these paths.
+- Android self-message path and DM unlock path untouched.
+
+### Notes
+- Python string password wipe in LUKS remains best-effort (immutable strings) — documented limitation, not changed.
+- Chronos-pi already has TESTMODE + allowlist-style patterns; left alone this pass to keep scope clear.
+
 ## 2026-08-19 – Thread safety + approval + ping
 
 ### Read-first review
