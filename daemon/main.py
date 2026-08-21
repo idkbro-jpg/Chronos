@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import signal
 import time
+import traceback
 from datetime import datetime, timezone
 
 import discord
@@ -214,6 +215,30 @@ async def on_message(message: discord.Message):
     if cmd is None:
         return
 
+    try:
+        await _dispatch_command(message, uid, uname, cmd)
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[Daemon] unhandled error for cmd={cmd!r}: {e}\n{tb}")
+        log_event(
+            "error",
+            user_id=uid,
+            user_name=uname,
+            detail=cmd,
+            extra={"error": str(e)[:500]},
+        )
+        try:
+            await message.reply(
+                f"Internal error while handling command. Check logs. ({type(e).__name__})"
+            )
+        except Exception:
+            pass
+
+
+async def _dispatch_command(
+    message: discord.Message, uid: int, uname: str, cmd: str
+) -> None:
+    """Handle a parsed command. Called under the on_message exception guard."""
     log_event("command", user_id=uid, user_name=uname, detail=cmd)
 
     if cmd == "__STATUS__":
