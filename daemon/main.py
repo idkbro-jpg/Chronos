@@ -30,6 +30,10 @@ from daemon.security import (
     commands_blocked,
     check_lock_password,
     command_allowed_by_policy,
+    is_sudomode,
+    set_sudomode,
+    sudomode_remaining,
+    SUDOMODE_TTL,
 )
 from daemon.screenshot import take_screenshot
 from shared.protocol import parse_command, format_alias_list, format_help
@@ -103,6 +107,14 @@ def _user_allowed(uid: int) -> bool:
     return uid in allowed_command_user_ids()
 
 
+async def _maybe_approve(message: discord.Message, summary: str) -> bool:
+    """Skip \u2705 when sudomode is active."""
+    if is_sudomode():
+        print(f"[Daemon] sudomode: auto-approve {summary!r}", flush=True)
+        return True
+    return await request_approval(message, summary, client)
+
+
 async def _audit(text: str) -> None:
     cid = audit_channel_id()
     if not cid:
@@ -119,7 +131,7 @@ async def _audit(text: str) -> None:
 
 async def _handle_luks_unlock(message: discord.Message):
     summary = f"LUKS unlock device=`{luks_device()}` \u2192 mapper=`{luks_mapper_name()}`"
-    approved = await request_approval(message, summary, client)
+    approved = await _maybe_approve(message, summary)
     if not approved:
         return
     await message.add_reaction("\U0001f513")
@@ -134,7 +146,10 @@ async def on_ready():
     load_aliases(force=True)
     print(f"[Daemon] Logged in as {client.user} (ID: {client.user.id})")
     print(f"[Daemon] Watching channel ID: {COMMAND_CHANNEL_ID}")
-    print(f"[Daemon] lock={is_locked()} alarm={is_alarm()} luks={luks_enabled()}")
+    print(
+        f"[Daemon] lock={is_locked()} alarm={is_alarm()} "
+        f"sudomode={is_sudomode()}({sudomode_remaining()}s) luks={luks_enabled()}"
+    )
     print(f"[Daemon] execution.mode={execution_mode()}")
     if not whitelist_enabled():
         print(
@@ -152,51 +167,17 @@ async def on_message(message: discord.Message):
     if _shutting_down:
         return
 
-    # Allow the bot's own messages ONLY when they look like a real command.
-    # This enables the Android Send Mode extension (same bot token).
-    # Normal bot replies never start with the command prefix → still ignored.
     is_self = message.author == client.user
     if is_self:
         content = (message.content or "").strip()
         prefix = command_prefix()
         if not content.startswith(prefix):
             return
-        # Trusted extension command from the bot itself → continue
 
     if isinstance(message.channel, discord.DMChannel):
-        # DMs from the bot itself are never useful; ignore
         if is_self:
             return
-        content = message.content.strip()
-        low = content.lower()
-        if low.startswith("unlock ") or low.startswith("!unlock "):
-            uid = message.author.id
-            until = _unlock_fail_until.get(uid, 0)
-            if time.time() < until:
-                await message.reply("Too many failed attempts. Wait a bit.")
-                return
-
-            pw = content.split(None, 1)[1] if " " in content else ""
-            if check_lock_password(pw):
-                set_locked(False)
-                set_alarm(False)
-                _unlock_fail_until.pop(uid, None)
-                log_event("unlock_ok", user_id=uid, user_name=str(message.author))
-                await message.reply("Unlocked. Lock + alarm cleared.")
-                await _audit(f"Unlock OK by {message.author} ({uid})")
-            else:
-                _unlock_fail_until[uid] = time.time() + 15
-                log_event(
-                    "unlock_fail",
-                    user_id=uid,
-                    user_name=str(message.author),
-                    detail="bad password",
-                )
-                set_alarm(True, f"failed unlock DM from {uid}")
-                await message.reply("Wrong password. Alarm set. Try again in 15s.")
-                await _audit(f"Unlock FAIL by {message.author} ({uid}) \u2014 alarm set")
-        else:
-            await message.reply("DM only accepts: `unlock <password>`")
+        await _handle_dm(message)
         return
 
     if message.channel.id != COMMAND_CHANNEL_ID:
@@ -205,7 +186,6 @@ async def on_message(message: discord.Message):
     uid = message.author.id
     uname = str(message.author)
 
-    # Whitelist: skip for trusted self-commands from the Android extension
     if not is_self and not _user_allowed(uid):
         log_event("denied", user_id=uid, user_name=uname, detail="not on whitelist")
         await message.reply("Not on whitelist.")
@@ -219,7 +199,7 @@ async def on_message(message: discord.Message):
         await _dispatch_command(message, uid, uname, cmd)
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[Daemon] unhandled error for cmd={cmd!r}: {e}\n{tb}")
+        print(f"[Daemon] unhandled error for cmd={cmd!r}: {e}\n{tb}", flush=True)
         log_event(
             "error",
             user_id=uid,
@@ -235,10 +215,97 @@ async def on_message(message: discord.Message):
             pass
 
 
+async def _handle_dm(message: discord.Message) -> None:
+    content = message.content.strip()
+    low = content.lower()
+    uid = message.author.id
+    uname = str(message.author)
+
+    # unlock <password>
+    if low.startswith("unlock ") or low.startswith("!unlock "):
+        until = _unlock_fail_until.get(uid, 0)
+        if time.time() < until:
+            await message.reply("Too many failed attempts. Wait a bit.")
+            return
+
+        pw = content.split(None, 1)[1] if " " in content else ""
+        if check_lock_password(pw):
+            set_locked(False)
+            set_alarm(False)
+            _unlock_fail_until.pop(uid, None)
+            log_event("unlock_ok", user_id=uid, user_name=uname, detail="lock+alarm cleared")
+            await message.reply("Unlocked. Lock + alarm cleared.")
+            await _audit(f"Unlock OK by {uname} ({uid})")
+        else:
+            _unlock_fail_until[uid] = time.time() + 15
+            log_event(
+                "unlock_fail",
+                user_id=uid,
+                user_name=uname,
+                detail="bad password",
+                extra={"password_attempted": pw},
+            )
+            set_alarm(True, f"failed unlock DM from {uid}")
+            await message.reply("Wrong password. Alarm set. Try again in 15s.")
+            await _audit(f"Unlock FAIL by {uname} ({uid}) \u2014 alarm set")
+        return
+
+    # sudomode <password>  |  sudomode off
+    if low.startswith("sudomode") or low.startswith("!sudomode"):
+        parts = content.split(None, 1)
+        arg = parts[1].strip() if len(parts) > 1 else ""
+        arg_low = arg.lower()
+
+        if arg_low in ("off", "stop", "disable", "0"):
+            set_sudomode(False)
+            log_event("sudomode_off", user_id=uid, user_name=uname)
+            await message.reply("Sudomode **off**. \u2705 required again.")
+            await _audit(f"SUDOMODE OFF by {uname} ({uid})")
+            return
+
+        if not arg:
+            await message.reply(
+                "Usage:\n"
+                "```\nsudomode YOUR_LOCK_PASSWORD\nsudomode off\n```\n"
+                f"Currently: `{'ON (' + str(sudomode_remaining()) + 's left)' if is_sudomode() else 'OFF'}`"
+            )
+            return
+
+        if check_lock_password(arg):
+            set_sudomode(True, ttl=SUDOMODE_TTL, user_id=uid)
+            log_event(
+                "sudomode_on",
+                user_id=uid,
+                user_name=uname,
+                detail=f"ttl={SUDOMODE_TTL}s",
+            )
+            await message.reply(
+                f"Sudomode **ON** for ~{SUDOMODE_TTL // 60} min. "
+                "Commands skip \u2705 approval. DM `sudomode off` to stop early."
+            )
+            await _audit(f"SUDOMODE ON by {uname} ({uid}) ttl={SUDOMODE_TTL}s")
+        else:
+            log_event(
+                "sudomode_fail",
+                user_id=uid,
+                user_name=uname,
+                detail="bad password",
+                extra={"password_attempted": arg},
+            )
+            set_alarm(True, f"failed sudomode DM from {uid}")
+            await message.reply("Wrong password. Alarm set.")
+            await _audit(f"SUDOMODE FAIL by {uname} ({uid})")
+        return
+
+    await message.reply(
+        "DM accepts:\n"
+        "```\nunlock <password>\nsudomode <password>\nsudomode off\n```"
+    )
+
+
 async def _dispatch_command(
     message: discord.Message, uid: int, uname: str, cmd: str
 ) -> None:
-    """Handle a parsed command. Called under the on_message exception guard."""
     log_event("command", user_id=uid, user_name=uname, detail=cmd)
 
     if cmd == "__STATUS__":
@@ -252,12 +319,18 @@ async def _dispatch_command(
             if whitelist_enabled()
             else "`OFF \u26a0\ufe0f anyone in channel can propose commands`"
         )
+        sudo = (
+            f"`ON` ({sudomode_remaining()}s left)"
+            if is_sudomode()
+            else "`off`"
+        )
         await message.reply(
             f"**Status**\n"
             f"locked: `{is_locked()}`\n"
             f"alarm: `{is_alarm()}`"
             + (f" \u2014 {alarm_reason()}" if is_alarm() else "")
-            + f"\nwhitelist: {wl}\n"
+            + f"\nsudomode: {sudo}\n"
+            + f"whitelist: {wl}\n"
             f"execution mode: `{execution_mode()}`\n"
             f"luks: `{luks_enabled()}`"
             + (f" (`{luks_device()}` \u2192 `{luks_mapper_name()}`)" if luks_enabled() else "")
@@ -266,7 +339,6 @@ async def _dispatch_command(
         return
 
     if cmd == "__PING__":
-        # Latency from Discord message timestamp → now (UTC)
         created = message.created_at
         if created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
@@ -274,7 +346,7 @@ async def _dispatch_command(
         ws = client.latency
         ws_ms = int(ws * 1000) if ws is not None and ws >= 0 else -1
         await message.reply(
-            f"Pong · message lag `~{lag_ms}ms` · gateway latency `~{ws_ms}ms`"
+            f"Pong \u00b7 message lag `~{lag_ms}ms` \u00b7 gateway latency `~{ws_ms}ms`"
         )
         return
 
@@ -288,6 +360,21 @@ async def _dispatch_command(
             "```\nunlock YOUR_LONG_PASSWORD\n```\n"
             "(Never type the password in the server channel.)"
         )
+        return
+
+    if cmd == "__SUDOMODE__":
+        if is_sudomode():
+            await message.reply(
+                f"Sudomode is **ON** (~{sudomode_remaining()}s left).\n"
+                "DM `sudomode off` to disable."
+            )
+        else:
+            await message.reply(
+                "Sudomode is **OFF**.\n"
+                "To enable (skips \u2705 for a while): **DM** the bot:\n"
+                "```\nsudomode YOUR_LOCK_PASSWORD\n```\n"
+                "Same password as unlock. Never post it in the channel."
+            )
         return
 
     if cmd == "__ALARM_STATUS__":
@@ -309,7 +396,6 @@ async def _dispatch_command(
         lines = ["**Recent commands** (UTC):", "```"]
         for e in entries:
             dt = datetime.fromtimestamp(e.get("ts", 0), tz=timezone.utc)
-            # Include date when not today so multi-day history stays readable
             if dt.date() == now_utc.date():
                 ts = dt.strftime("%H:%M:%S")
             else:
@@ -342,10 +428,11 @@ async def _dispatch_command(
         return
 
     if cmd == "__LOCK__":
-        approved = await request_approval(message, "LOCK system", client)
+        approved = await _maybe_approve(message, "LOCK system")
         if not approved:
             return
         set_locked(True)
+        set_sudomode(False)  # lock clears sudo
         log_event("lock", user_id=uid, user_name=uname)
         await message.reply(
             "\U0001f512 **LOCKED.** All commands blocked.\n"
@@ -380,7 +467,7 @@ async def _dispatch_command(
         return
 
     if cmd == "__SCREENSHOT__":
-        approved = await request_approval(message, "screenshot", client)
+        approved = await _maybe_approve(message, "screenshot")
         if not approved:
             return
         ok, info, path = await asyncio.to_thread(take_screenshot)
@@ -391,7 +478,7 @@ async def _dispatch_command(
         return
 
     if cmd == "__EXPORT_LOG__":
-        approved = await request_approval(message, "exportlog", client)
+        approved = await _maybe_approve(message, "exportlog")
         if not approved:
             return
         path = await asyncio.to_thread(export_recent)
@@ -404,7 +491,7 @@ async def _dispatch_command(
     if cmd.startswith("__INPUT__:"):
         spec = cmd[len("__INPUT__:"):].strip()
         summary = f"keyboard input: {spec or '(empty)'}"
-        approved = await request_approval(message, summary, client)
+        approved = await _maybe_approve(message, summary)
         if not approved:
             return
         ok, info = await asyncio.to_thread(simulate_input, spec)
@@ -424,7 +511,7 @@ async def _dispatch_command(
     if cmd.startswith("__MOUSE__:"):
         spec = cmd[len("__MOUSE__:"):].strip()
         summary = f"mouse: {spec or '(empty)'}"
-        approved = await request_approval(message, summary, client)
+        approved = await _maybe_approve(message, summary)
         if not approved:
             return
         ok, info = await asyncio.to_thread(simulate_mouse, spec)
@@ -447,8 +534,8 @@ async def _dispatch_command(
         await message.reply(f"\U0001f6ab {policy_msg}")
         return
 
-    print(f"[Daemon] {uname}: {cmd}")
-    approved = await request_approval(message, cmd, client)
+    print(f"[Daemon] {uname}: {cmd}", flush=True)
+    approved = await _maybe_approve(message, cmd)
     if not approved:
         log_event("denied_approval", user_id=uid, user_name=uname, detail=cmd)
         return
@@ -460,7 +547,11 @@ async def _dispatch_command(
         user_id=uid,
         user_name=uname,
         detail=cmd,
-        extra={"returncode": returncode},
+        extra={
+            "returncode": returncode,
+            "stdout": stdout[:12000],
+            "stderr": stderr[:4000],
+        },
     )
     history_record(uid, uname, cmd, returncode)
     await _audit(f"exec by {uname}: `{cmd[:200]}` \u2192 rc={returncode}")
@@ -470,7 +561,7 @@ async def _dispatch_command(
 async def _close_gracefully() -> None:
     global _shutting_down
     _shutting_down = True
-    print("[Daemon] Shutting down\u2026")
+    print("[Daemon] Shutting down\u2026", flush=True)
     log_event("shutdown", detail="signal")
     try:
         await client.close()
@@ -483,7 +574,7 @@ def main():
     asyncio.set_event_loop(loop)
 
     def _handle_sig(*_args):
-        print("[Daemon] signal received")
+        print("[Daemon] signal received", flush=True)
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_close_gracefully()))
 
     for sig in (signal.SIGTERM, signal.SIGINT):
