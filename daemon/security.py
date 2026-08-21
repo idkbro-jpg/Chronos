@@ -1,5 +1,5 @@
 """
-Lock, alarm, rate-limit state.
+Lock, alarm, rate-limit, sudomode state.
 
 Note: Discord bots do NOT see the end-user's IP address.
 We key everything by Discord user id (and log that).
@@ -29,6 +29,9 @@ from shared.config import (
 )
 
 _rate_lock = threading.Lock()
+
+# Default sudomode lifetime (seconds)
+SUDOMODE_TTL = 15 * 60
 
 
 def _ensure_state_dir() -> Path:
@@ -121,7 +124,44 @@ def check_lock_password(password: str) -> bool:
     return verify_password(password, path.read_text(encoding="utf-8"))
 
 
-# --- rate limit (in-memory + light disk persistence so restarts do not fully reset) ---
+# --- sudomode (skip ✅ approval for a limited time after DM password) ---
+
+def is_sudomode() -> bool:
+    p = _flag("SUDOMODE")
+    if not p.exists():
+        return False
+    try:
+        expires = float(p.read_text(encoding="utf-8").strip().splitlines()[0])
+    except Exception:
+        p.unlink(missing_ok=True)
+        return False
+    if time.time() > expires:
+        p.unlink(missing_ok=True)
+        return False
+    return True
+
+
+def sudomode_remaining() -> int:
+    p = _flag("SUDOMODE")
+    if not p.exists():
+        return 0
+    try:
+        expires = float(p.read_text(encoding="utf-8").strip().splitlines()[0])
+    except Exception:
+        return 0
+    return max(0, int(expires - time.time()))
+
+
+def set_sudomode(on: bool, ttl: int = SUDOMODE_TTL, user_id: int | None = None) -> None:
+    p = _flag("SUDOMODE")
+    if on:
+        expires = time.time() + ttl
+        p.write_text(f"{expires}\n{user_id or ''}\n", encoding="utf-8")
+    elif p.exists():
+        p.unlink()
+
+
+# --- rate limit ---
 _hits: dict[int, deque[float]] = defaultdict(deque)
 _hits_loaded = False
 
@@ -175,7 +215,6 @@ def _save_rate_hits_unlocked() -> None:
             recent = [t for t in q if now - t <= window]
             if recent:
                 out[str(uid)] = recent
-        # Atomic write so a crash mid-write cannot leave empty/corrupt JSON
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(out), encoding="utf-8")
         tmp.replace(path)
@@ -184,10 +223,6 @@ def _save_rate_hits_unlocked() -> None:
 
 
 def check_rate_limit(user_id: int) -> tuple[bool, str, int]:
-    """
-    Returns (allowed, message, retry_after_seconds).
-    If not allowed and trigger_alarm, sets alarm.
-    """
     if not rate_limit_enabled():
         return True, "", 0
 
@@ -216,10 +251,6 @@ def check_rate_limit(user_id: int) -> tuple[bool, str, int]:
 
 
 def commands_blocked() -> tuple[bool, str]:
-    """
-    Whether normal commands should be refused.
-    Unlock via DM still allowed at a higher layer.
-    """
     if is_locked():
         return True, "System is LOCKED. DM the bot: unlock <password>"
     if is_alarm() and alarm_blocks_all():
@@ -228,18 +259,6 @@ def commands_blocked() -> tuple[bool, str]:
 
 
 def command_allowed_by_policy(command: str) -> tuple[bool, str]:
-    """
-    When execution.mode is allowlist, only commands matching allowed_patterns may run.
-    Builtins are handled before this is called.
-
-    Pattern kinds:
-      - plain string without * or ?  → exact full-string match
-      - glob (* and ?)               → full-string glob match
-      - re:REGEX                     → re.search on the whole command
-
-    Intentionally no loose substring match: a pattern of \"uptime\" must not
-    allow \"rm -rf /; uptime\". Use \"uptime*\" or \"re:^uptime\\b\" for prefixes.
-    """
     mode = execution_mode()
     if mode != "allowlist":
         return True, ""
@@ -260,7 +279,6 @@ def command_allowed_by_policy(command: str) -> tuple[bool, str]:
                 continue
             continue
 
-        # Glob / exact: always fullmatch after translating * and ?
         try:
             regex = re.escape(pat).replace(r"\*", ".*").replace(r"\?", ".")
             if re.fullmatch(regex, cmd):

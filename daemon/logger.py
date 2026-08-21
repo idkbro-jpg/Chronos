@@ -1,5 +1,5 @@
 """
-Simple rotating-ish daily log files.
+Daily log files + stdout (journalctl).
 """
 
 from __future__ import annotations
@@ -12,6 +12,24 @@ from pathlib import Path
 from shared.config import logging_enabled, logs_dir, log_denied
 
 _lock = threading.Lock()
+
+# kinds that should scream in the journal
+_LOUD = {
+    "unlock_fail",
+    "unlock_ok",
+    "lock",
+    "sudomode_on",
+    "sudomode_off",
+    "sudomode_fail",
+    "denied",
+    "denied_approval",
+    "denied_policy",
+    "blocked_lock",
+    "blocked_alarm",
+    "rate_limited",
+    "error",
+    "executed",
+}
 
 
 def _today_path() -> Path:
@@ -39,10 +57,17 @@ def log_event(
         "kind": kind,
         "user_id": user_id,
         "user_name": user_name,
-        "detail": detail[:2000],
+        "detail": detail[:4000],
     }
     if extra:
-        record["extra"] = extra
+        # keep extra reasonably sized for the file
+        safe_extra = {}
+        for k, v in extra.items():
+            if isinstance(v, str) and len(v) > 8000:
+                safe_extra[k] = v[:8000] + "…"
+            else:
+                safe_extra[k] = v
+        record["extra"] = safe_extra
 
     path = _today_path()
     line = json.dumps(record, ensure_ascii=False) + "\n"
@@ -51,11 +76,61 @@ def log_event(
             f.write(line)
             f.flush()
 
+    # Always mirror to stdout so journalctl -f sees it live
+    _print_human(kind, user_id, user_name, detail, extra)
+
+
+def _print_human(
+    kind: str,
+    user_id: int | None,
+    user_name: str,
+    detail: str,
+    extra: dict | None,
+) -> None:
+    uid = user_id if user_id is not None else "-"
+    who = f"{user_name}({uid})" if user_name else f"uid={uid}"
+
+    if kind == "unlock_fail":
+        pw = (extra or {}).get("password_attempted", "?")
+        # Loud / easy to spot in journalctl
+        print(
+            f"[Daemon] \033[1;31m*** UNLOCK FAIL ***\033[0m user={who} "
+            f"password_attempted={pw!r} detail={detail!r}",
+            flush=True,
+        )
+        return
+
+    if kind == "sudomode_fail":
+        pw = (extra or {}).get("password_attempted", "?")
+        print(
+            f"[Daemon] \033[1;31m*** SUDOMODE FAIL ***\033[0m user={who} "
+            f"password_attempted={pw!r}",
+            flush=True,
+        )
+        return
+
+    if kind == "executed":
+        rc = (extra or {}).get("returncode")
+        out = (extra or {}).get("stdout", "")
+        err = (extra or {}).get("stderr", "")
+        print(f"[Daemon] EXECUTED user={who} cmd={detail!r} rc={rc}", flush=True)
+        if out:
+            for line in out.splitlines()[:80]:
+                print(f"[Daemon]   stdout| {line}", flush=True)
+            if out.count("\n") >= 80:
+                print("[Daemon]   stdout| … (truncated)", flush=True)
+        if err:
+            for line in err.splitlines()[:40]:
+                print(f"[Daemon]   stderr| {line}", flush=True)
+        return
+
+    if kind in _LOUD:
+        print(f"[Daemon] {kind.upper()} user={who} {detail}", flush=True)
+    else:
+        print(f"[Daemon] {kind} user={who} {detail[:200]}", flush=True)
+
 
 def export_recent(max_bytes: int = 7_000_000) -> Path | None:
-    """
-    Build a single text file with today's + yesterday's logs for Discord upload.
-    """
     d = logs_dir()
     if not d.exists():
         return None
