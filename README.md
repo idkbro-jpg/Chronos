@@ -2,13 +2,11 @@
 
 Secure remote command execution via Discord.
 
-Daemon on your Linux machine watches a channel, requires reaction approval, then runs commands. Optional LUKS unlock for secondary volumes after boot.
+A daemon on your Linux machine watches a channel, requires reaction approval, then runs commands. Optional LUKS unlock for secondary volumes. Android companions: **remote** (send) and **receiver** (status/ping bridge).
 
-## ⚠️ Security warning
+## Security warning
 
-**If `discord.whitelist_enabled` is `false` (the default), anyone who can post in the command channel can propose shell commands on this machine.**
-
-Approval still requires a `✅` reaction, but if `approval.allowed_user_ids` is also empty, **any** non-bot user in the channel can approve — including strangers in a public server.
+If `discord.whitelist_enabled` is `false` (default), anyone who can post in the command channel can propose shell commands. Approval still needs ✅, but if `approval.allowed_user_ids` is empty, **any** non-bot user can approve.
 
 Recommended minimum:
 
@@ -22,93 +20,63 @@ approval:
     - YOUR_DISCORD_USER_ID
 ```
 
-The daemon prints a loud warning on startup when the whitelist is off. Shell commands run as the user that owns the daemon process (often with substantial privileges).
-
-## Config
-
-| File | Purpose |
-|------|--------|
-| `.env` | `DISCORD_TOKEN`, `COMMAND_CHANNEL_ID` |
-| `config.yml` | Timeouts, emojis, shell, allowlists, LUKS, audit channel |
-| `aliases.yml` | Shortcuts |
-| `secrets/` | Encrypted LUKS password + machine key (gitignored) |
-
-```text
-!help            # command overview
-!status          # lock / alarm / rate-limit / luks / whitelist
-!reload          # reload config + aliases without restart
-!history         # recent executed commands
-!last            # last executed command
-!luksunlock      # unlock configured LUKS volume
-!input alt p     # keyboard simulation
-!mouse click     # mouse simulation
-```
-
-## Quick Start
+## Quick start
 
 ```bash
-cd ~/Chronos
+cd ~/Chronos   # or your clone path
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill token + channel id
+python setup.py          # interactive wizard (recommended first run)
 ```
 
-Enable **MESSAGE CONTENT INTENT**. Invite bot with send/read/reaction perms.
-
-### Update
+Or manually:
 
 ```bash
-cd ~/Chronos
+cp .env.example .env     # token + channel id
+# edit config.yml
+python -m scripts.set_lock_password
+```
+
+Enable **MESSAGE CONTENT INTENT** for the bot. Invite with send / read history / add reactions.
+
+```bash
+systemctl --user enable --now chronos-daemon.service
+journalctl --user -u chronos-daemon.service -f
+```
+
+## Update
+
+```bash
 python update.py
 ```
 
-Pulls from git, installs requirements, restarts `chronos-daemon.service`.  
-See `python update.py --help` for `--stash` / `--force` / `--no-restart`.
+## Useful commands
 
-### systemd user service
+| Command | Meaning |
+|---------|---------|
+| `!help` | Overview |
+| `!status` | Lock / alarm / sudomode / whitelist |
+| `!lock` | Lock machine (needs ✅ unless sudomode) |
+| `!sudomode` | Status; enable via DM `sudomode <password>` |
+| `!screenshot` | Capture screen |
+| `!reload` | Reload config + aliases |
 
-```ini
-[Unit]
-Description=Chronos Daemon
-After=network-online.target
-Wants=network-online.target
+Unlock / sudomode password: **DM only** — `unlock <password>` / `sudomode <password>`.
 
-[Service]
-Type=simple
-WorkingDirectory=%h/Chronos
-ExecStart=%h/Chronos/venv/bin/python -m daemon.main
-Restart=always
-RestartSec=5
-Environment=PYTHONUNBUFFERED=1
+## Layout
 
-[Install]
-WantedBy=default.target
-```
+| Path | Purpose |
+|------|---------|
+| `.env` | `DISCORD_TOKEN`, `COMMAND_CHANNEL_ID` |
+| `config.yml` | Prefix, whitelist, timeouts, rate limit, LUKS |
+| `aliases.yml` | Shortcuts |
+| `secrets/` | Lock hash, LUKS material (gitignored) |
+| `remote/` | Android send APK |
+| `receiver/` | Android receive APK (local `?status` / `?ping`) |
+| `setup.py` | First-time / reconfigure wizard |
+| `update.py` | git pull + pip + restart |
 
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now chronos-daemon.service
-```
+## Logs
 
-## LUKS
-
-See [docs/luks.md](docs/luks.md).
-
-Short version: works for volumes unlocked **after** boot. Not for pre-boot root unlock.
-
-```bash
-python -m scripts.set_luks_password
-# then enable + set device in config.yml
-# !luksunlock in Discord
-```
-
-## Optional hardening
-
-- `execution.mode: allowlist` + `allowed_patterns` — only matching commands run
-- `discord.audit_channel_id` — mirror exec/lock/unlock events to a private channel
-- Prefer a private Discord channel + whitelist always on
-- See [docs/security.md](docs/security.md)
-
-## Note on `bot/`
-
-Prefer running **only the daemon**. The optional `bot/` package is messenger-only; sharing the same token with the daemon causes Discord to disconnect one of them.
+- Live: `journalctl --user -u chronos-daemon.service -f`
+- Files: `logs/chronos-YYYY-MM-DD.log`

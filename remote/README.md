@@ -1,16 +1,17 @@
-# Chronos Remote – Send Mode (Beta)
+# Chronos Remote (Send)
 
-- Notfall-Buttons: Status, Lock, Screenshot
-- **CMD-Zeile** mit Input + Output
-- Zwei Channel-IDs: normal + **Backend** (für `!lock`, `?status`, `?ping`)
-- Antworten aus Discord werden ins Output-Log gelesen
+Android app: posts commands into the Discord command channel.
 
-## Settings
-
-- Bot Token
-- Command Channel ID (normal)
-- Backend Channel ID (optional, für kritische Commands)
+- Emergency buttons: status, lock, screenshot
+- CMD line with input + output (reads replies)
+- Optional backend channel ID for `!lock`, `!sudomode`, `?status`, `?ping`
 
 ## Build
 
-Android Studio → Ordner `remote/` öffnen → Build APK
+Open the `remote/` folder in Android Studio → Build APK.
+
+## Settings
+
+- Bot token
+- Command channel ID
+- Backend channel ID (optional)

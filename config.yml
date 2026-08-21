@@ -1,25 +1,20 @@
-# ============================================================
-# Chronos – zentrale Konfiguration
+# Chronos configuration
 # Secrets → .env + secrets/
-# Nach Änderungen: !reload  oder  systemctl --user restart chronos-daemon
-# ============================================================
+# After changes: !reload  or  systemctl --user restart chronos-daemon
 
 discord:
   command_prefix: "!"
 
-  # ⚠️  SECURITY: if false, ANYONE who can post in the command channel
-  # can propose shell commands on this machine (still needs ✅ approval,
-  # but approval.allowed_user_ids is also empty by default → any reactor works).
-  # Strongly recommended for anything beyond a private test channel:
+  # SECURITY: if false, anyone who can post in the command channel can propose
+  # shell commands (still needs ✅ approval; if approval.allowed_user_ids is
+  # empty, any non-bot can approve).
+  # Recommended:
   #   whitelist_enabled: true
   #   allowed_user_ids: [YOUR_DISCORD_USER_ID]
   whitelist_enabled: false
   allowed_user_ids: []
-  # Beispiel:
-  # allowed_user_ids:
-  #   - 123456789012345678
 
-  # Optional: mirror critical events (exec, lock, unlock, luks) here. 0 = off.
+  # Optional: mirror critical events (exec, lock, unlock, luks). 0 = off.
   audit_channel_id: 0
 
 approval:
@@ -34,53 +29,30 @@ execution:
   use_shell: true
   max_output_chars: 1800
   strip_ansi: true
-  # unrestricted = any approved shell command (powerful)
-  # allowlist = only commands matching allowed_patterns (plus aliases expanded first)
+  # unrestricted = any approved shell command
+  # allowlist = only commands matching allowed_patterns
   mode: unrestricted
-  # Patterns (full-string match unless re:):
-  #   plain string (no * ?) → exact match only
-  #   glob with * or ?     → full-string glob
-  #   re:REGEX             → re.search on the command
-  # No loose substring match (prevents "uptime" from allowing "rm …; uptime").
+  # Patterns (full-string unless re:):
+  #   plain string → exact match
+  #   glob with * or ? → full-string glob
+  #   re:REGEX → re.search
   allowed_patterns: []
-  # Beispiel allowlist:
-  # mode: allowlist
-  # allowed_patterns:
-  #   - "uptime"
-  #   - "df -h"
-  #   - "systemctl --user status *"
-  #   - "re:^free\\b"
 
-# ------------------------------------------------------------
-# Rate limit (pro Discord-User-ID)
-# ------------------------------------------------------------
 rate_limit:
   enabled: true
-  # Max. Commands in window_seconds
   max_commands: 20
   window_seconds: 60
-  # Bei Überschreitung → Alarm-Modus + privates Log
   trigger_alarm: true
 
-# ------------------------------------------------------------
-# Lock / Alarm ("tripwire")
-# Setup-Passwort: python -m scripts.set_lock_password
-# !lock  → alles dicht außer !unlock (per DM)
-# ------------------------------------------------------------
 security:
-  # Status-Dateien (gitignored unter state/)
   state_dir: "state"
   lock_hash_file: "secrets/lock.hash"
-  # Nach Alarm: alle Commands blocken bis lokales Unlock ODER !unlock per DM
+  # After alarm: block all commands until local clear or DM unlock
   alarm_blocks_all: true
 
-# ------------------------------------------------------------
-# Logging
-# ------------------------------------------------------------
 logging:
   enabled: true
   dir: "logs"
-  # Eine Datei pro Tag: logs/chronos-YYYY-MM-DD.log
   also_log_denied: true
 
 history:

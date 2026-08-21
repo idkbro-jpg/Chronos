@@ -1,19 +1,17 @@
-# Chronos Receiver (Beta)
+# Chronos Receiver
 
-- `?status` / `?ping` **lokal** (ohne Discord)
-- CMD-Zeile mit Input + Output
-- Listening: pollt Discord auf `?`… und antwortet
-- Zwei Channel-IDs: normal + Backend
-- Andere Commands (z.B. `?WoL`, `!lock`) können über Discord gesendet werden
+Android bridge on a always-on phone (e.g. Xiaomi).
 
-## Settings
-
-- Bot Token
-- Channel ID
-- Backend Channel ID (optional)
-- Laptop IP
-- Timeout (Sekunden)
+- `?status` / `?ping` run **locally** (no Discord required)
+- CMD line + listening poll for `?` commands in Discord
+- Other commands can be forwarded to Discord
 
 ## Build
 
-Android Studio → `receiver/` öffnen → Build APK
+Open the `receiver/` folder in Android Studio → Build APK.
+
+## Settings
+
+- Bot token, channel ID, optional backend channel ID
+- Laptop IP (LAN or Tailscale)
+- Timeout (seconds)
