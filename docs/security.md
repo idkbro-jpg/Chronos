@@ -41,6 +41,10 @@ python -m scripts.set_lock_password
 
 Unlock only via **DM**: `unlock <password>`
 
+Failed unlock / sudomode attempts set an alarm and are rate-limited (15s
+cooldown). The **attempted password is never written** to JSONL logs or
+journalctl — only the attempt length may be recorded for diagnostics.
+
 ## Rate limit / allowlist / audit
 
 See `config.yml` for `rate_limit`, `execution.mode: allowlist`, and
