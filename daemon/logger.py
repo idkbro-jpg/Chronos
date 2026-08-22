@@ -31,12 +31,42 @@ _LOUD = {
     "executed",
 }
 
+# Keys that must never appear in logs (defense in depth)
+_SECRET_EXTRA_KEYS = frozenset(
+    {
+        "password_attempted",
+        "password",
+        "pass",
+        "secret",
+        "token",
+    }
+)
+
 
 def _today_path() -> Path:
     d = logs_dir()
     d.mkdir(parents=True, exist_ok=True)
     day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return d / f"chronos-{day}.log"
+
+
+def _sanitize_extra(extra: dict | None) -> dict | None:
+    """Drop secret-bearing keys; never persist raw passwords."""
+    if not extra:
+        return None
+    safe: dict = {}
+    for k, v in extra.items():
+        key_l = str(k).lower()
+        if key_l in _SECRET_EXTRA_KEYS or "password" in key_l:
+            # Keep a length hint only if the value was a string
+            if isinstance(v, str):
+                safe["password_len"] = len(v)
+            continue
+        if isinstance(v, str) and len(v) > 8000:
+            safe[k] = v[:8000] + "\u2026"
+        else:
+            safe[k] = v
+    return safe or None
 
 
 def log_event(
@@ -52,6 +82,8 @@ def log_event(
     if kind in ("denied", "rate_limited", "blocked_lock", "blocked_alarm") and not log_denied():
         return
 
+    safe_extra = _sanitize_extra(extra)
+
     record = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "kind": kind,
@@ -59,14 +91,7 @@ def log_event(
         "user_name": user_name,
         "detail": detail[:4000],
     }
-    if extra:
-        # keep extra reasonably sized for the file
-        safe_extra = {}
-        for k, v in extra.items():
-            if isinstance(v, str) and len(v) > 8000:
-                safe_extra[k] = v[:8000] + "…"
-            else:
-                safe_extra[k] = v
+    if safe_extra:
         record["extra"] = safe_extra
 
     path = _today_path()
@@ -77,7 +102,7 @@ def log_event(
             f.flush()
 
     # Always mirror to stdout so journalctl -f sees it live
-    _print_human(kind, user_id, user_name, detail, extra)
+    _print_human(kind, user_id, user_name, detail, safe_extra)
 
 
 def _print_human(
@@ -91,20 +116,19 @@ def _print_human(
     who = f"{user_name}({uid})" if user_name else f"uid={uid}"
 
     if kind == "unlock_fail":
-        pw = (extra or {}).get("password_attempted", "?")
-        # Loud / easy to spot in journalctl
+        plen = (extra or {}).get("password_len", "?")
         print(
             f"[Daemon] \033[1;31m*** UNLOCK FAIL ***\033[0m user={who} "
-            f"password_attempted={pw!r} detail={detail!r}",
+            f"password_len={plen} detail={detail!r}",
             flush=True,
         )
         return
 
     if kind == "sudomode_fail":
-        pw = (extra or {}).get("password_attempted", "?")
+        plen = (extra or {}).get("password_len", "?")
         print(
             f"[Daemon] \033[1;31m*** SUDOMODE FAIL ***\033[0m user={who} "
-            f"password_attempted={pw!r}",
+            f"password_len={plen}",
             flush=True,
         )
         return
@@ -118,7 +142,7 @@ def _print_human(
             for line in out.splitlines()[:80]:
                 print(f"[Daemon]   stdout| {line}", flush=True)
             if out.count("\n") >= 80:
-                print("[Daemon]   stdout| … (truncated)", flush=True)
+                print("[Daemon]   stdout| \u2026 (truncated)", flush=True)
         if err:
             for line in err.splitlines()[:40]:
                 print(f"[Daemon]   stderr| {line}", flush=True)
