@@ -1,5 +1,15 @@
 # Chronos changelog
 
+## 2026-08-22 – never log unlock/sudomode password attempts
+
+### Security
+- **Failed unlock / sudomode DMs** no longer write the attempted password into JSONL logs or journalctl. Only `password_len` is recorded for diagnostics.
+- **Logger defense-in-depth**: any `extra` key that looks like a password/secret is stripped (or reduced to length) before disk/stdout write.
+
+### Notes
+- No change to lock/alarm/sudomode behaviour, approval flow, or command execution.
+- Existing log files from before this change may still contain historical attempts; rotate or delete if needed.
+
 ## 2026-08-21 – logger lock + timeout process-group kill + error guard
 
 ### Robustness
