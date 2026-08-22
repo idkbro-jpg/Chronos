@@ -1,5 +1,31 @@
 # Chronos – Internal AI Improvement Log
 
+## 2026-08-22 – Full read-through + password log redaction
+
+### Read-first review
+- Full pass over daemon/, shared/, tests/, update.py, docs/, bot/, config, aliases, requirements, public + internal changelogs.
+- Prior hardening (allowlist exact/glob/re, atomic state writes, history/rate locks, approval HTTPException handling, process-group kill on timeout, on_message error guard, logger lock) confirmed intact.
+- Chronos-pi glanced at (separate single-file bot); left alone this pass.
+
+### Risks identified
+1. **Critical**: failed unlock / sudomode DMs logged `password_attempted` (raw string) into JSONL + journalctl human lines. Anyone with log access could recover near-miss passwords.
+2. Logger had no defense-in-depth if a future caller passed secret-bearing keys in `extra`.
+
+### Implemented
+1. `daemon/main.py`: unlock_fail / sudomode_fail now pass only `password_len` (never the attempt string).
+2. `daemon/logger.py`: `_sanitize_extra` strips keys in `{password_attempted, password, pass, secret, token}` and any key containing `password`; optional length retained. Human fail lines print `password_len` only.
+
+### Breakage check (fact-checked)
+- Unlock / alarm / sudomode success paths unchanged.
+- Rate limit, approval, allowlist, shell execution, screenshot/input/mouse paths untouched.
+- Unit tests do not assert on fail-log payload; no test updates required.
+- Existing installs: behaviour identical; only log content for *failed* password attempts changes.
+- Old log files may still contain historical plaintext attempts — operators should rotate if concerned.
+
+### Notes
+- Did not change permissive defaults (whitelist off, unrestricted mode) — warnings already push operators to harden.
+- Android remote/receiver and Chronos-pi not modified this pass.
+
 ## 2026-08-21 – Full read-through + robustness
 
 ### Read-first review
