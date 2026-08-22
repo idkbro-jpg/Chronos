@@ -238,12 +238,13 @@ async def _handle_dm(message: discord.Message) -> None:
             await _audit(f"Unlock OK by {uname} ({uid})")
         else:
             _unlock_fail_until[uid] = time.time() + 15
+            # Never log the attempted password — only length for diagnostics.
             log_event(
                 "unlock_fail",
                 user_id=uid,
                 user_name=uname,
                 detail="bad password",
-                extra={"password_attempted": pw},
+                extra={"password_len": len(pw)},
             )
             set_alarm(True, f"failed unlock DM from {uid}")
             await message.reply("Wrong password. Alarm set. Try again in 15s.")
@@ -285,12 +286,13 @@ async def _handle_dm(message: discord.Message) -> None:
             )
             await _audit(f"SUDOMODE ON by {uname} ({uid}) ttl={SUDOMODE_TTL}s")
         else:
+            # Never log the attempted password — only length for diagnostics.
             log_event(
                 "sudomode_fail",
                 user_id=uid,
                 user_name=uname,
                 detail="bad password",
-                extra={"password_attempted": arg},
+                extra={"password_len": len(arg)},
             )
             set_alarm(True, f"failed sudomode DM from {uid}")
             await message.reply("Wrong password. Alarm set.")
