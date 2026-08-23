@@ -29,6 +29,7 @@ from shared.config import (
 )
 
 _rate_lock = threading.Lock()
+_flag_lock = threading.Lock()
 
 # Default sudomode lifetime (seconds)
 SUDOMODE_TTL = 15 * 60
@@ -45,35 +46,40 @@ def _flag(name: str) -> Path:
 
 
 def is_locked() -> bool:
-    return _flag("LOCKED").exists()
+    with _flag_lock:
+        return _flag("LOCKED").exists()
 
 
 def is_alarm() -> bool:
-    return _flag("ALARM").exists()
+    with _flag_lock:
+        return _flag("ALARM").exists()
 
 
 def set_locked(on: bool) -> None:
-    p = _flag("LOCKED")
-    if on:
-        p.write_text(str(time.time()), encoding="utf-8")
-    elif p.exists():
-        p.unlink()
+    with _flag_lock:
+        p = _flag("LOCKED")
+        if on:
+            p.write_text(str(time.time()), encoding="utf-8")
+        elif p.exists():
+            p.unlink()
 
 
 def set_alarm(on: bool, reason: str = "") -> None:
-    p = _flag("ALARM")
-    if on:
-        p.write_text(f"{time.time()}\n{reason}\n", encoding="utf-8")
-    elif p.exists():
-        p.unlink()
+    with _flag_lock:
+        p = _flag("ALARM")
+        if on:
+            p.write_text(f"{time.time()}\n{reason}\n", encoding="utf-8")
+        elif p.exists():
+            p.unlink()
 
 
 def alarm_reason() -> str:
-    p = _flag("ALARM")
-    if not p.exists():
-        return ""
-    lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
-    return lines[1] if len(lines) > 1 else ""
+    with _flag_lock:
+        p = _flag("ALARM")
+        if not p.exists():
+            return ""
+        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        return lines[1] if len(lines) > 1 else ""
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:
@@ -127,38 +133,41 @@ def check_lock_password(password: str) -> bool:
 # --- sudomode (skip ✅ approval for a limited time after DM password) ---
 
 def is_sudomode() -> bool:
-    p = _flag("SUDOMODE")
-    if not p.exists():
-        return False
-    try:
-        expires = float(p.read_text(encoding="utf-8").strip().splitlines()[0])
-    except Exception:
-        p.unlink(missing_ok=True)
-        return False
-    if time.time() > expires:
-        p.unlink(missing_ok=True)
-        return False
-    return True
+    with _flag_lock:
+        p = _flag("SUDOMODE")
+        if not p.exists():
+            return False
+        try:
+            expires = float(p.read_text(encoding="utf-8").strip().splitlines()[0])
+        except Exception:
+            p.unlink(missing_ok=True)
+            return False
+        if time.time() > expires:
+            p.unlink(missing_ok=True)
+            return False
+        return True
 
 
 def sudomode_remaining() -> int:
-    p = _flag("SUDOMODE")
-    if not p.exists():
-        return 0
-    try:
-        expires = float(p.read_text(encoding="utf-8").strip().splitlines()[0])
-    except Exception:
-        return 0
-    return max(0, int(expires - time.time()))
+    with _flag_lock:
+        p = _flag("SUDOMODE")
+        if not p.exists():
+            return 0
+        try:
+            expires = float(p.read_text(encoding="utf-8").strip().splitlines()[0])
+        except Exception:
+            return 0
+        return max(0, int(expires - time.time()))
 
 
 def set_sudomode(on: bool, ttl: int = SUDOMODE_TTL, user_id: int | None = None) -> None:
-    p = _flag("SUDOMODE")
-    if on:
-        expires = time.time() + ttl
-        p.write_text(f"{expires}\n{user_id or ''}\n", encoding="utf-8")
-    elif p.exists():
-        p.unlink()
+    with _flag_lock:
+        p = _flag("SUDOMODE")
+        if on:
+            expires = time.time() + ttl
+            p.write_text(f"{expires}\n{user_id or ''}\n", encoding="utf-8")
+        elif p.exists():
+            p.unlink()
 
 
 # --- rate limit ---

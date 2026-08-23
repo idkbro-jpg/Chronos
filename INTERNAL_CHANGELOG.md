@@ -1,5 +1,30 @@
 # Chronos – Internal AI Improvement Log
 
+## 2026-08-23 – Full re-read + flag lock consistency
+
+### Read-first review
+- Full pass over daemon/ (main, security, executor, logger, history, approval, inputsim, mouse, screenshot, luks), shared/ (config, protocol, aliases, discord_utils), tests/, update.py, setup.py, config.yml, aliases, requirements, docs/, bot/, public + internal changelogs.
+- Chronos-pi README + structure glanced at; left alone this pass (separate product, TESTMODE defaults, already hardened).
+- Prior hardening confirmed intact: allowlist exact/glob/re, atomic state writes, history/rate locks, approval HTTPException handling, process-group kill on timeout, on_message error guard, logger lock + password redaction.
+
+### Risks identified
+1. **Consistency gap**: `LOCKED` / `ALARM` / `SUDOMODE` flag file ops had no lock while history + rate-limit + logger already used `threading.Lock`. Concurrent `asyncio.to_thread` (shell/input/screenshot) plus a following Discord message could in theory interleave flag read/write.
+
+### Implemented
+1. `daemon/security.py`: dedicated `_flag_lock` around all flag existence checks, reads, writes, and unlinks for LOCKED / ALARM / SUDOMODE.
+
+### Breakage check (fact-checked)
+- Locks held only for short disk ops → no deadlock with the event loop.
+- `check_rate_limit` still calls `set_alarm` while holding `_rate_lock`; that acquires `_flag_lock` briefly — no reverse order elsewhere, so no deadlock.
+- Default unrestricted mode, whitelist defaults, approval semantics, rate-limit behaviour, password paths unchanged.
+- Unit tests do not assert on flag concurrency; no test updates required.
+- Existing installs: behaviour identical; only serialization of rare concurrent flag mutations changes.
+
+### Notes
+- Did not change permissive defaults (whitelist off, unrestricted mode).
+- Android remote/receiver and Chronos-pi not modified this pass.
+- No password / secret logging regressions introduced.
+
 ## 2026-08-22 – Full read-through + password log redaction
 
 ### Read-first review

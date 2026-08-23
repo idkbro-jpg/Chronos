@@ -1,5 +1,14 @@
 # Chronos changelog
 
+## 2026-08-23 – thread-safe lock / alarm / sudomode flags
+
+### Robustness
+- **Flag file ops serialized**: `LOCKED`, `ALARM`, and `SUDOMODE` reads/writes now use a dedicated `threading.Lock` (same idea as history + rate-limit). Concurrent `asyncio.to_thread` work cannot interleave flag mutations.
+
+### Notes
+- No change to default security posture, allowlist rules, approval flow, or command execution semantics.
+- Locks are held only for short disk ops → no deadlock with the event loop.
+
 ## 2026-08-22 – never log unlock/sudomode password attempts
 
 ### Security
