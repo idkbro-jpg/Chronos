@@ -1,5 +1,14 @@
 # Chronos changelog
 
+## 2026-08-24 – sudomode remaining cleans expired flag
+
+### Robustness
+- **`sudomode_remaining`**: when the SUDOMODE flag is expired or unreadable, the flag file is unlinked under the same `_flag_lock` used by `is_sudomode`. Prevents a stale expired file from lingering until the next `is_sudomode` check.
+
+### Notes
+- No change to TTL, approval skip, lock/alarm, rate-limit, or default security posture.
+- Callers still see `0` for remaining when expired; only disk cleanup is more consistent.
+
 ## 2026-08-23 – thread-safe lock / alarm / sudomode flags
 
 ### Robustness

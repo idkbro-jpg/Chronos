@@ -1,5 +1,30 @@
 # Chronos – Internal AI Improvement Log
 
+## 2026-08-24 – Full re-read + sudomode_remaining cleanup
+
+### Read-first review
+- Full pass over daemon/ (main, security, executor, logger, history, approval, inputsim, mouse, screenshot, luks), shared/ (config, protocol, aliases, discord_utils), tests/, update.py, setup.py, config.yml, aliases, requirements, docs/, bot/, public + internal changelogs.
+- Chronos-pi and Android remote/receiver glanced at; separate products.
+- Prior hardening confirmed intact: allowlist exact/glob/re, atomic state writes, history/rate/flag locks, approval HTTPException handling, process-group kill on timeout, on_message error guard, logger lock + password redaction.
+
+### Risks identified
+1. **Consistency gap**: `is_sudomode` already unlinked expired/unreadable SUDOMODE flags; `sudomode_remaining` left a stale file when remaining hit 0 until the next `is_sudomode` call. Harmless but inconsistent under the shared `_flag_lock`.
+
+### Implemented
+1. `daemon/security.py` `sudomode_remaining`: on unreadable or expired flag, `unlink(missing_ok=True)` under `_flag_lock` (same as `is_sudomode`).
+
+### Breakage check (fact-checked)
+- Callers still receive `0` when expired; only disk state is cleaned earlier.
+- Locks held only for short disk ops → no deadlock with the event loop.
+- TTL, set_sudomode, lock/alarm, rate-limit, approval, password paths unchanged.
+- Unit tests do not assert on flag-file lifetime; no test updates required.
+- Existing installs: behaviour identical for users; optional cleanup of a zero-byte-window stale flag.
+
+### Notes
+- Did not change permissive defaults (whitelist off, unrestricted mode).
+- Android remote/receiver and Chronos-pi not modified in this Chronos commit.
+- No password / secret logging regressions introduced.
+
 ## 2026-08-23 – Full re-read + flag lock consistency
 
 ### Read-first review

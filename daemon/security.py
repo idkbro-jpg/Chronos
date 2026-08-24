@@ -156,8 +156,13 @@ def sudomode_remaining() -> int:
         try:
             expires = float(p.read_text(encoding="utf-8").strip().splitlines()[0])
         except Exception:
+            p.unlink(missing_ok=True)
             return 0
-        return max(0, int(expires - time.time()))
+        remaining = max(0, int(expires - time.time()))
+        if remaining == 0:
+            # Match is_sudomode: do not leave a stale expired flag file behind
+            p.unlink(missing_ok=True)
+        return remaining
 
 
 def set_sudomode(on: bool, ttl: int = SUDOMODE_TTL, user_id: int | None = None) -> None:
