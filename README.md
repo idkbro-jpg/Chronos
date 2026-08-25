@@ -1,14 +1,60 @@
 # Chronos
 
-Secure remote command execution via Discord.
+**Secure remote command execution via Discord** — for accessibility and remote access on Linux.
 
-A daemon on your Linux machine watches a channel, requires reaction approval, then runs commands. Optional LUKS unlock for secondary volumes. Android companions: **remote** (send) and **receiver** (status/ping bridge).
+A daemon on your machine watches a Discord channel, waits for ✅ approval, then runs the command. Optional lock / unlock, screenshots, keyboard & mouse, LUKS, and Android companion apps.
 
-## Security warning
+---
 
-If `discord.whitelist_enabled` is `false` (default), anyone who can post in the command channel can propose shell commands. Approval still needs ✅, but if `approval.allowed_user_ids` is empty, **any** non-bot user can approve.
+## Downloads
 
-Recommended minimum:
+| What | Where |
+|------|--------|
+| **Source + setup** | [Clone this repo](https://github.com/idkbro-jpg/Chronos) or download the source zip from [Releases](https://github.com/idkbro-jpg/Chronos/releases) |
+| **Android APKs** (Remote + Receiver) | **[Download APKs here →](https://github.com/idkbro-jpg/Chronos/releases)** |
+
+> **No Android Studio needed** if you use the prebuilt APKs from Releases.  
+> Prefer building yourself? Sources live in `remote/` and `receiver/`.
+
+---
+
+## Quick start (Linux)
+
+```bash
+git clone https://github.com/idkbro-jpg/Chronos.git
+cd Chronos
+
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+python setup.py          # interactive wizard — recommended first run
+```
+
+Then:
+
+1. Discord Developer Portal → Bot → enable **MESSAGE CONTENT INTENT**
+2. Invite the bot with: Send Messages, Read Message History, Add Reactions
+3. Start the daemon:
+
+```bash
+systemctl --user enable --now chronos-daemon.service
+journalctl --user -u chronos-daemon.service -f
+```
+
+Update later with:
+
+```bash
+python update.py
+```
+
+---
+
+## Security (read this)
+
+If `whitelist_enabled` is **false** (default for easy first setup), anyone who can post in the command channel can *propose* shell commands. Approval still needs ✅ — but if the approval list is empty, **any** non-bot user can approve.
+
+**Recommended minimum for real use:**
 
 ```yaml
 discord:
@@ -20,65 +66,90 @@ approval:
     - YOUR_DISCORD_USER_ID
 ```
 
-## Quick start
+Unlock / sudomode passwords are sent **only via DM**. Failed password attempts are **never** written to logs (only the length may be recorded).
 
-```bash
-cd ~/Chronos   # or your clone path
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-python setup.py          # interactive wizard (recommended first run)
-```
+More detail: [docs/security.md](docs/security.md)
 
-Or manually:
-
-```bash
-cp .env.example .env     # token + channel id
-# edit config.yml
-python -m scripts.set_lock_password
-```
-
-Enable **MESSAGE CONTENT INTENT** for the bot. Invite with send / read history / add reactions.
-
-```bash
-systemctl --user enable --now chronos-daemon.service
-journalctl --user -u chronos-daemon.service -f
-```
-
-## Update
-
-```bash
-python update.py
-```
+---
 
 ## Useful commands
 
-| Command | Meaning |
-|---------|---------|
+| Command | What it does |
+|---------|----------------|
 | `!help` | Overview |
 | `!status` | Lock / alarm / sudomode / whitelist |
-| `!lock` | Lock machine (needs ✅ unless sudomode) |
-| `!sudomode` | Status; enable via DM `sudomode <password>` |
+| `!ping` | Latency check |
+| `!lock` | Lock the machine (needs ✅ unless sudomode) |
+| `!sudomode` | Status; enable via DM: `sudomode <password>` |
 | `!screenshot` | Capture screen |
+| `!input …` | Keyboard simulation |
+| `!mouse …` | Basic mouse |
 | `!reload` | Reload config + aliases |
+| `!history` / `!last` | Recent commands |
 
-Unlock / sudomode password: **DM only** — `unlock <password>` / `sudomode <password>`.
+**Unlock / sudomode:** DM only → `unlock <password>` / `sudomode <password>`
+
+---
+
+## Prefixes (important)
+
+| Prefix | Used by |
+|--------|---------|
+| `!` (default) | Chronos daemon commands |
+| `?` | Android **Receiver** local commands (`?status`, `?ping`) — do **not** set the bot prefix to `?` |
+
+You can change the bot prefix in `config.yml` (`discord.command_prefix`), but keep it different from `?`.
+
+---
+
+## Android apps
+
+| App | Role |
+|-----|------|
+| **Remote** (`remote/`) | Send commands / emergency buttons from your phone |
+| **Receiver** (`receiver/`) | Always-on bridge phone: local `?status` / `?ping`, optional forward to Discord |
+
+Prebuilt APKs: **[Releases](https://github.com/idkbro-jpg/Chronos/releases)**  
+Or open the folders in Android Studio and build yourself.
+
+---
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
-| `.env` | `DISCORD_TOKEN`, `COMMAND_CHANNEL_ID` |
+| `.env` | Token + channel ID (secrets) |
 | `config.yml` | Prefix, whitelist, timeouts, rate limit, LUKS |
-| `aliases.yml` | Shortcuts |
+| `aliases.yml` | Shortcuts (e.g. `!uptime`) |
 | `secrets/` | Lock hash, LUKS material (gitignored) |
-| `remote/` | Android **send** app source (build APK locally) |
-| `receiver/` | Android **receive** app source (local `?status` / `?ping`) |
 | `setup.py` | First-time / reconfigure wizard |
-| `update.py` | git pull + pip + restart |
+| `update.py` | `git pull` + pip + restart daemon |
+| `remote/` / `receiver/` | Android **source** (build APKs locally or use Releases) |
+| `docs/` | Security, input, LUKS notes |
 
-Compiled APKs are **not** stored in this repo (they bloated clones). Build from `remote/` / `receiver/` with Android Studio / Gradle, or attach builds to GitHub Releases.
+Compiled APKs are **not** kept in the source tree (they bloat every clone). Use Releases or build from source.
+
+---
 
 ## Logs
 
-- Live: `journalctl --user -u chronos-daemon.service -f`
-- Files: `logs/chronos-YYYY-MM-DD.log`
+```bash
+journalctl --user -u chronos-daemon.service -f
+# or files:
+logs/chronos-YYYY-MM-DD.log
+```
+
+---
+
+## Requirements
+
+- Linux (systemd user services recommended)
+- Python 3.10+
+- Discord bot with Message Content Intent
+- Optional: `ydotool` / `wtype` / `xdotool` for keyboard & mouse
+
+Windows is **not** supported yet.
+
+---
+
+Made for people who want remote access without fighting the setup for an hour.
