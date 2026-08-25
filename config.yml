@@ -1,14 +1,17 @@
 # Chronos configuration
-# Secrets → .env + secrets/
+# Secrets live in .env + secrets/
 # After changes: !reload  or  systemctl --user restart chronos-daemon
 
 discord:
+  # Bot command prefix in the command channel.
+  # Default "!" — do NOT use "?" here: "?" is reserved by the Android Receiver
+  # for local commands (?status, ?ping) that run on the phone without Discord.
   command_prefix: "!"
 
   # SECURITY: if false, anyone who can post in the command channel can propose
   # shell commands (still needs ✅ approval; if approval.allowed_user_ids is
   # empty, any non-bot can approve).
-  # Recommended:
+  # Recommended for real use:
   #   whitelist_enabled: true
   #   allowed_user_ids: [YOUR_DISCORD_USER_ID]
   whitelist_enabled: false
@@ -22,6 +25,7 @@ approval:
   approve_emoji: "✅"
   deny_emoji: "❌"
   # Empty = any non-bot user may approve. Restrict in shared servers.
+  # Example: allowed_user_ids: [YOUR_DISCORD_USER_ID]
   allowed_user_ids: []
 
 execution:
@@ -30,12 +34,13 @@ execution:
   max_output_chars: 1800
   strip_ansi: true
   # unrestricted = any approved shell command
-  # allowlist = only commands matching allowed_patterns
+  # allowlist   = only commands matching allowed_patterns
   mode: unrestricted
   # Patterns (full-string unless re:):
-  #   plain string → exact match
-  #   glob with * or ? → full-string glob
-  #   re:REGEX → re.search
+  #   plain string  → exact match only
+  #   glob with * ? → full-string glob
+  #   re:REGEX      → re.search
+  # There is NO loose substring match (e.g. "uptime" does not allow "rm; uptime").
   allowed_patterns: []
 
 rate_limit:
