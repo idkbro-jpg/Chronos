@@ -1,5 +1,35 @@
 # Chronos – Internal AI Improvement Log
 
+## 2026-08-25 – Full re-read + resilient ID lists + APK hygiene
+
+### Read-first review
+- Full pass over daemon/ (main, security, executor, logger, history, approval, inputsim, mouse, screenshot, luks), shared/ (config, protocol, aliases, discord_utils), tests/, update.py, setup.py, config.yml, aliases, requirements, docs/, bot/, public + internal changelogs.
+- Chronos-pi (single-file bot.py + README/config) fully read; Android remote/receiver/android sources present; large compiled APKs in tree noted.
+- Prior hardening confirmed intact: allowlist exact/glob/re, atomic state writes, history/rate/flag locks, approval HTTPException handling, process-group kill on timeout, on_message error guard, logger lock + password redaction, sudomode_remaining cleanup.
+
+### Risks identified
+1. **Config fragility**: `allowed_command_user_ids` / `allowed_approval_user_ids` used bare `int(x)` — one non-integer in `config.yml` raised `ValueError` on first whitelist/approval use and could take the daemon path down.
+2. **Repo bloat**: `compiled apk/receiver1.0.apk` and `remote1.0.apk` (~15 MB each) were tracked; slow clones and unnecessary binary history for a source-focused project.
+3. **`.gitignore` incomplete** for Android/Gradle build products and `*.apk`.
+
+### Implemented
+1. `shared/config.py`: shared `_parse_id_list` skips invalid entries (same style as Chronos-pi `allowed_user_ids`).
+2. Deleted both compiled APK blobs from `main`; expanded `.gitignore` (`*.apk`, `compiled apk/`, `.gradle/`, `build/`, editor junk).
+3. README layout clarified: `remote/` / `receiver/` are sources; build locally or use Releases.
+
+### Breakage check (fact-checked)
+- Valid integer IDs → identical behaviour.
+- Empty lists still empty; whitelist-off path unchanged.
+- No change to approval flow, allowlist, rate-limit, lock/alarm/sudomode, shell execution, or password logging.
+- Unit tests do not depend on strict `int()` failure; no test updates required.
+- Existing installs: pull + restart picks up config helper; missing APKs only affect people who relied on binaries in-repo (they should build or use Releases).
+
+### Notes
+- Did not change permissive defaults (whitelist off, unrestricted mode).
+- Chronos-pi VERSION string vs README mismatch noted; fixed in Chronos-pi repo separately if touched.
+- Android Kotlin sources not modified this pass.
+- History rewrite not performed (APK blobs remain in older commits); new clones of current `main` no longer download them.
+
 ## 2026-08-24 – Full re-read + sudomode_remaining cleanup
 
 ### Read-first review
