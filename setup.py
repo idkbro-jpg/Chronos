@@ -5,6 +5,7 @@ Chronos interactive setup.
     python setup.py
 
 Creates/updates .env, config.yml, lock password, optional systemd user unit.
+Optionally creates a venv and installs requirements.txt.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import getpass
 import os
 import re
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -124,6 +126,7 @@ def write_config(
 # After changes: !reload  or  systemctl --user restart chronos-daemon
 
 discord:
+  # Bot command prefix. Do NOT use "?" — reserved by Android Receiver (?status / ?ping).
   command_prefix: "{prefix}"
 
   # SECURITY: if false, anyone who can post in the command channel can propose
@@ -207,12 +210,10 @@ def set_master_password() -> None:
         return
 
 
-def write_systemd_unit() -> None:
+def write_systemd_unit(python_path: str) -> None:
     unit_dir = Path.home() / ".config" / "systemd" / "user"
     unit_dir.mkdir(parents=True, exist_ok=True)
     unit = unit_dir / "chronos-daemon.service"
-    venv_python = ROOT / "venv" / "bin" / "python"
-    python = str(venv_python) if venv_python.is_file() else sys.executable
     unit.write_text(
         textwrap.dedent(
             f"""\
@@ -224,7 +225,7 @@ def write_systemd_unit() -> None:
             [Service]
             Type=simple
             WorkingDirectory={ROOT}
-            ExecStart={python} -m daemon.main
+            ExecStart={python_path} -m daemon.main
             Restart=on-failure
             RestartSec=5
             Environment=PYTHONUNBUFFERED=1
@@ -239,6 +240,35 @@ def write_systemd_unit() -> None:
     print("  enable with:")
     print("    systemctl --user daemon-reload")
     print("    systemctl --user enable --now chronos-daemon.service")
+
+
+def ensure_venv_and_deps() -> str:
+    """Optionally create venv + pip install. Returns python path to use for systemd."""
+    venv_dir = ROOT / "venv"
+    venv_python = venv_dir / "bin" / "python"
+    req = ROOT / "requirements.txt"
+
+    if not ask_yes_no("Create/use a local venv and install requirements.txt?", True):
+        return str(venv_python) if venv_python.is_file() else sys.executable
+
+    if not venv_python.is_file():
+        print("  creating venv…")
+        subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True, cwd=ROOT)
+
+    py = str(venv_python)
+    if req.is_file():
+        print("  pip install -r requirements.txt …")
+        subprocess.run([py, "-m", "pip", "install", "--upgrade", "pip"], check=False, cwd=ROOT)
+        r = subprocess.run([py, "-m", "pip", "install", "-r", str(req)], cwd=ROOT)
+        if r.returncode != 0:
+            print("  pip install failed — fix network/permissions, then re-run setup or:")
+            print(f"    {py} -m pip install -r requirements.txt")
+        else:
+            print("  dependencies OK")
+    else:
+        print("  no requirements.txt found — skip pip")
+
+    return py
 
 
 def defaults() -> None:
@@ -258,17 +288,22 @@ def wizard() -> None:
     print(f"Project root: {ROOT}")
     print()
 
-    # Install location is the repo itself; confirm
     confirm = ask("Install / config directory (must be this repo)", str(ROOT))
     if Path(confirm).resolve() != ROOT:
         print("  Note: setup always writes into the repo that contains setup.py.")
         print(f"  Continuing with {ROOT}")
 
-    prefix = ask("Command prefix", "!")
-    if len(prefix) < 1:
+    # Dependencies first so later imports (lock password) work
+    python_path = ensure_venv_and_deps()
+
+    prefix = ask("Command prefix (do NOT use '?' — reserved by Android Receiver)", "!")
+    if not prefix:
+        prefix = "!"
+    if prefix.strip() == "?":
+        print("  '?' is used by the Receiver for ?status / ?ping — switching to '!' ")
         prefix = "!"
 
-    whitelist = ask_yes_no("Enable command whitelist? (recommended)", True)
+    whitelist = ask_yes_no("Enable command whitelist? (recommended for real use)", True)
     allowed_users: list[int] = []
     if whitelist:
         print("  Discord user IDs allowed to propose commands.")
@@ -325,17 +360,20 @@ def wizard() -> None:
         except Exception as e:
             print(f"  could not set password yet ({e})")
             print("  later: python -m scripts.set_lock_password")
+            print(f"  (use the venv python if you created one: {python_path} -m scripts.set_lock_password)")
 
     if ask_yes_no("Write systemd user unit chronos-daemon.service?", True):
-        write_systemd_unit()
+        write_systemd_unit(python_path)
 
     print()
     print("=== Next steps ===")
     print("1. Discord Developer Portal → Bot → enable MESSAGE CONTENT INTENT")
-    print("2. Invite bot with Send Messages, Read History, Add Reactions")
-    print("3. pip install -r requirements.txt  (venv recommended)")
-    print("4. systemctl --user enable --now chronos-daemon.service")
-    print("5. journalctl --user -u chronos-daemon.service -f")
+    print("2. Invite bot with: Send Messages, Read Message History, Add Reactions")
+    print("3. systemctl --user enable --now chronos-daemon.service")
+    print("4. journalctl --user -u chronos-daemon.service -f")
+    print()
+    print("Android APKs (optional): https://github.com/idkbro-jpg/Chronos/releases")
+    print("Update later: python update.py")
     print()
     print("Done.")
 
