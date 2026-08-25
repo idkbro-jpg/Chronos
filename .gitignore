@@ -2,8 +2,31 @@
 venv/
 __pycache__/
 *.pyc
+*.pyo
 secrets/
 state/
 logs/
 *.enc
 machine.key
+
+# Compiled Android packages (build from remote/ / receiver/ or use Releases)
+*.apk
+*.aab
+compiled apk/
+compiled_apk/
+
+# Android / Gradle local build output
+**/.gradle/
+**/build/
+**/local.properties
+**/*.iml
+**/.idea/
+*.keystore
+*.jks
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
