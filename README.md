@@ -71,10 +71,12 @@ Unlock / sudomode password: **DM only** — `unlock <password>` / `sudomode <pas
 | `config.yml` | Prefix, whitelist, timeouts, rate limit, LUKS |
 | `aliases.yml` | Shortcuts |
 | `secrets/` | Lock hash, LUKS material (gitignored) |
-| `remote/` | Android send APK |
-| `receiver/` | Android receive APK (local `?status` / `?ping`) |
+| `remote/` | Android **send** app source (build APK locally) |
+| `receiver/` | Android **receive** app source (local `?status` / `?ping`) |
 | `setup.py` | First-time / reconfigure wizard |
 | `update.py` | git pull + pip + restart |
+
+Compiled APKs are **not** stored in this repo (they bloated clones). Build from `remote/` / `receiver/` with Android Studio / Gradle, or attach builds to GitHub Releases.
 
 ## Logs
 
