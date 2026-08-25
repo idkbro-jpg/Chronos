@@ -1,5 +1,19 @@
 # Chronos changelog
 
+## 2026-08-25 – resilient user-id lists + repo hygiene
+
+### Robustness
+- **`allowed_user_ids` / approval lists**: non-integer entries in `config.yml` are skipped instead of raising `ValueError` on first bad value. A typo no longer takes the daemon down on the first whitelist/approval check.
+
+### Repo hygiene
+- **Compiled APKs removed** from the tree (`compiled apk/*.apk` ~15 MB each). Build from `remote/` / `receiver/` or attach builds to Releases.
+- **`.gitignore` expanded**: `*.apk`, Android/Gradle build dirs, editor junk.
+- README layout notes updated accordingly.
+
+### Notes
+- No change to default security posture, allowlist rules, approval flow, lock/alarm/sudomode, or command execution.
+- Valid integer IDs behave exactly as before; only invalid entries are ignored.
+
 ## 2026-08-24 – sudomode remaining cleans expired flag
 
 ### Robustness
