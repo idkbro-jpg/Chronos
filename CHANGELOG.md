@@ -1,18 +1,19 @@
 # Chronos changelog
 
-## 2026-08-25 – resilient user-id lists + repo hygiene
+## 2026-08-25 – UX: clearer README, setup installs deps, config comments
 
-### Robustness
-- **`allowed_user_ids` / approval lists**: non-integer entries in `config.yml` are skipped instead of raising `ValueError` on first bad value. A typo no longer takes the daemon down on the first whitelist/approval check.
+### UX / onboarding
+- **README** rewritten for beginners: download table (source + APKs via Releases), security callout, prefix note (`!` vs Receiver `?`), quick start, command list.
+- **setup.py** can create a local `venv` and run `pip install -r requirements.txt` (optional, default yes). Systemd unit uses that Python path. Warns against prefix `?`.
+- **config.yml** comments: prefix must not be `?` (Receiver local commands); allowlist rules restated.
 
-### Repo hygiene
-- **Compiled APKs removed** from the tree (`compiled apk/*.apk` ~15 MB each). Build from `remote/` / `receiver/` or attach builds to Releases.
-- **`.gitignore` expanded**: `*.apk`, Android/Gradle build dirs, editor junk.
-- README layout notes updated accordingly.
+### Repo hygiene (earlier same day)
+- Compiled APKs removed from the tree; use **GitHub Releases** or build from `remote/` / `receiver/`.
+- Invalid entries in user-id lists no longer crash the daemon.
 
 ### Notes
-- No change to default security posture, allowlist rules, approval flow, lock/alarm/sudomode, or command execution.
-- Valid integer IDs behave exactly as before; only invalid entries are ignored.
+- No change to runtime security defaults, allowlist semantics, or command execution.
+- Prebuilt APKs must be attached to a Release by the maintainer (not stored in git).
 
 ## 2026-08-24 – sudomode remaining cleans expired flag
 
