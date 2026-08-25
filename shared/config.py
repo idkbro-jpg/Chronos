@@ -186,9 +186,19 @@ def whitelist_enabled() -> bool:
     return bool(get()["discord"].get("whitelist_enabled", False))
 
 
+def _parse_id_list(raw: list | None) -> list[int]:
+    """Best-effort int conversion; skip invalid entries instead of raising."""
+    out: list[int] = []
+    for x in raw or []:
+        try:
+            out.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def allowed_command_user_ids() -> list[int]:
-    ids = get()["discord"].get("allowed_user_ids") or []
-    return [int(x) for x in ids]
+    return _parse_id_list(get()["discord"].get("allowed_user_ids"))
 
 
 def audit_channel_id() -> int:
@@ -211,8 +221,7 @@ def deny_emoji() -> str:
 
 
 def allowed_approval_user_ids() -> list[int]:
-    ids = get()["approval"].get("allowed_user_ids") or []
-    return [int(x) for x in ids]
+    return _parse_id_list(get()["approval"].get("allowed_user_ids"))
 
 
 def exec_timeout() -> int:
