@@ -129,6 +129,8 @@ Or open the folders in Android Studio and build yourself.
 
 Compiled APKs are **not** kept in the source tree (they bloat every clone). Use Releases or build from source.
 
+**Config tip:** timeouts, rate-limit numbers, history size, and `audit_channel_id` must be integers. If a value is missing or invalid (e.g. text instead of a number), Chronos keeps running and uses the built-in default for that field (see comments in `config.yml` — e.g. approval timeout → **60**, command timeout → **300**, rate limit → **20** / **60** s, history → **30**). Invalid Discord user IDs in allowlists are skipped the same way.
+
 ---
 
 ## Logs
