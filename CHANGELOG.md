@@ -6,6 +6,10 @@
 - **Config numeric getters** (`approval_timeout`, `exec_timeout`, `max_output_chars`, rate-limit max/window, `history_max_entries`, `audit_channel_id`): invalid or non-integer values in `config.yml` now fall back to defaults instead of raising `ValueError` and potentially taking the daemon down on first use.
 - Same style as the existing resilient user-id list parsing.
 
+### Docs
+- **`config.yml`**: each numeric key comments its default / invalid fallback (60, 300, 1800, 20, 60, 30, audit `0`).
+- **README**: short “Config tip” under Layout explaining the same behaviour.
+
 ### Notes
 - Valid integers behave identically. Soft warnings in `_validate` still print when values look wrong.
 - No change to security defaults, allowlist, approval, lock/alarm/sudomode, or command execution.
