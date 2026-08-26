@@ -1,5 +1,30 @@
 # Chronos – Internal AI Improvement Log
 
+## 2026-08-26 – Full re-read + resilient numeric config
+
+### Read-first review
+- Full pass over daemon/ (main, security, executor, logger, history, approval, inputsim, mouse, screenshot, luks), shared/ (config, protocol, aliases, discord_utils), tests/, update.py, setup.py, config.yml, aliases, requirements, docs/, bot/, public + internal changelogs.
+- Prior hardening confirmed intact: allowlist exact/glob/re, atomic state writes, history/rate/flag locks, approval HTTPException handling, process-group kill on timeout, on_message error guard, logger lock + password redaction, sudomode_remaining cleanup, resilient ID lists.
+
+### Risks identified
+1. **Config fragility (numeric)**: several getters used bare `int(...)` on YAML values. A typo like `timeout_seconds: sixty` or a quoted non-number would raise `ValueError` on first use of that setting (approval timeout, exec timeout, rate limit, history size, max output, audit channel) and could interrupt the daemon path.
+
+### Implemented
+1. `shared/config.py`: `_parse_int(value, default)` — best-effort conversion, default on TypeError/ValueError/None.
+2. Wired into `audit_channel_id`, `approval_timeout`, `exec_timeout`, `max_output_chars`, `rate_limit_max`, `rate_limit_window`, `history_max_entries`.
+
+### Breakage check (fact-checked)
+- Valid integers → identical behaviour.
+- Invalid values → documented defaults (same numbers as `_defaults()`).
+- No change to approval flow, allowlist, rate-limit semantics, lock/alarm/sudomode, shell execution, or password logging.
+- Unit tests still pass (8/8); no test updates required.
+- Existing installs: pull + restart; bad config values stop being a crash, become a silent default (warnings still printed at load for some cases).
+
+### Notes
+- Did not change permissive defaults (whitelist off, unrestricted mode).
+- Android remote/receiver and Chronos-pi not modified this pass.
+- No further logic bugs found in the current hardened core after full re-read.
+
 ## 2026-08-25 – Full re-read + resilient ID lists + APK hygiene
 
 ### Read-first review
@@ -9,7 +34,7 @@
 
 ### Risks identified
 1. **Config fragility**: `allowed_command_user_ids` / `allowed_approval_user_ids` used bare `int(x)` — one non-integer in `config.yml` raised `ValueError` on first whitelist/approval use and could take the daemon path down.
-2. **Repo bloat**: `compiled apk/receiver1.0.apk` and `remote1.0.apk` (~15 MB each) were tracked; slow clones and unnecessary binary history for a source-focused project.
+2. **Repo bloat**: `compiled apk/receiver1.0.apk` and `remote1.0.apk` (~15 MB each) were tracked; slow clones and unnecessary binary history for a source-focused project.
 3. **`.gitignore` incomplete** for Android/Gradle build products and `*.apk`.
 
 ### Implemented
