@@ -1,6 +1,10 @@
 # Chronos configuration
 # Secrets live in .env + secrets/
 # After changes: !reload  or  systemctl --user restart chronos-daemon
+#
+# Numeric fields: if a value is missing, empty, or not a valid integer,
+# Chronos uses the default shown next to each key (daemon does not crash).
+# Example: timeout_seconds: sixty  → treated as 60
 
 discord:
   # Bot command prefix in the command channel.
@@ -17,20 +21,25 @@ discord:
   whitelist_enabled: false
   allowed_user_ids: []
 
-  # Optional: mirror critical events (exec, lock, unlock, luks). 0 = off.
+  # Optional: mirror critical events (exec, lock, unlock, luks).
+  # Default / invalid → 0 (off).
   audit_channel_id: 0
 
 approval:
+  # How long to wait for ✅/❌. Default / invalid → 60
   timeout_seconds: 60
   approve_emoji: "✅"
   deny_emoji: "❌"
   # Empty = any non-bot user may approve. Restrict in shared servers.
   # Example: allowed_user_ids: [YOUR_DISCORD_USER_ID]
+  # Invalid IDs in the list are skipped (not a crash).
   allowed_user_ids: []
 
 execution:
+  # Max runtime for a shell command. Default / invalid → 300
   timeout_seconds: 300
   use_shell: true
+  # Max chars per stdout/stderr Discord reply chunk. Default / invalid → 1800
   max_output_chars: 1800
   strip_ansi: true
   # unrestricted = any approved shell command
@@ -45,7 +54,9 @@ execution:
 
 rate_limit:
   enabled: true
+  # Max commands per user per window. Default / invalid → 20
   max_commands: 20
+  # Window length in seconds. Default / invalid → 60
   window_seconds: 60
   trigger_alarm: true
 
@@ -62,6 +73,7 @@ logging:
 
 history:
   enabled: true
+  # Max entries kept in state/history.json. Default / invalid → 30
   max_entries: 30
 
 files:
