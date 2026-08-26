@@ -197,19 +197,26 @@ def _parse_id_list(raw: list | None) -> list[int]:
     return out
 
 
+def _parse_int(value: Any, default: int) -> int:
+    """Best-effort int conversion; return default on invalid values."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def allowed_command_user_ids() -> list[int]:
     return _parse_id_list(get()["discord"].get("allowed_user_ids"))
 
 
 def audit_channel_id() -> int:
-    try:
-        return int(get()["discord"].get("audit_channel_id") or 0)
-    except (TypeError, ValueError):
-        return 0
+    return _parse_int(get()["discord"].get("audit_channel_id"), 0)
 
 
 def approval_timeout() -> int:
-    return int(get()["approval"].get("timeout_seconds") or 60)
+    return _parse_int(get()["approval"].get("timeout_seconds"), 60)
 
 
 def approve_emoji() -> str:
@@ -225,7 +232,7 @@ def allowed_approval_user_ids() -> list[int]:
 
 
 def exec_timeout() -> int:
-    return int(get()["execution"].get("timeout_seconds") or 300)
+    return _parse_int(get()["execution"].get("timeout_seconds"), 300)
 
 
 def use_shell() -> bool:
@@ -233,7 +240,7 @@ def use_shell() -> bool:
 
 
 def max_output_chars() -> int:
-    return int(get()["execution"].get("max_output_chars") or 1800)
+    return _parse_int(get()["execution"].get("max_output_chars"), 1800)
 
 
 def strip_ansi() -> bool:
@@ -272,11 +279,11 @@ def rate_limit_enabled() -> bool:
 
 
 def rate_limit_max() -> int:
-    return int(get().get("rate_limit", {}).get("max_commands") or 20)
+    return _parse_int(get().get("rate_limit", {}).get("max_commands"), 20)
 
 
 def rate_limit_window() -> int:
-    return int(get().get("rate_limit", {}).get("window_seconds") or 60)
+    return _parse_int(get().get("rate_limit", {}).get("window_seconds"), 60)
 
 
 def rate_limit_triggers_alarm() -> bool:
@@ -312,7 +319,7 @@ def history_enabled() -> bool:
 
 
 def history_max_entries() -> int:
-    return int(get().get("history", {}).get("max_entries") or 30)
+    return _parse_int(get().get("history", {}).get("max_entries"), 30)
 
 
 def luks_enabled() -> bool:
