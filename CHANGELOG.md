@@ -1,5 +1,15 @@
 # Chronos changelog
 
+## 2026-08-26 – resilient numeric config values
+
+### Robustness
+- **Config numeric getters** (`approval_timeout`, `exec_timeout`, `max_output_chars`, rate-limit max/window, `history_max_entries`, `audit_channel_id`): invalid or non-integer values in `config.yml` now fall back to defaults instead of raising `ValueError` and potentially taking the daemon down on first use.
+- Same style as the existing resilient user-id list parsing.
+
+### Notes
+- Valid integers behave identically. Soft warnings in `_validate` still print when values look wrong.
+- No change to security defaults, allowlist, approval, lock/alarm/sudomode, or command execution.
+
 ## 2026-08-25 – UX: clearer README, setup installs deps, config comments
 
 ### UX / onboarding
