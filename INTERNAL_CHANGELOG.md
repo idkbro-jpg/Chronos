@@ -1,5 +1,37 @@
 # Chronos – Internal AI Improvement Log
 
+## 2026-08-27 – Full re-read + lock hygiene + parse/prefix/export
+
+### Read-first review
+- Full pass over daemon/ (main, security, executor, logger, history, approval, inputsim, mouse, screenshot, luks), shared/ (config, protocol, aliases, discord_utils), tests/, bot/, config.yml, aliases, requirements, public + internal changelogs.
+- Prior hardening confirmed intact: allowlist exact/glob/re, atomic state writes, history/rate/flag locks, approval HTTPException handling, process-group kill on timeout, on_message error guard, logger lock + password redaction, sudomode_remaining cleanup, resilient ID lists + numeric getters.
+
+### Risks identified
+1. **Nested locks**: `check_rate_limit` called `set_alarm` while still holding `_rate_lock` (flag lock nested under rate lock). No reverse order existed → no deadlock in practice, but unnecessary coupling.
+2. **`parse_command`**: double `split()` on the body was correct for normal input but harder to reason about; multi-word rest handled awkwardly.
+3. **Empty prefix**: `command_prefix()` could return `""` if config set empty/whitespace → every channel message treated as a command.
+4. **`export_recent`**: read log files without the logger `_lock`, so a concurrent `log_event` append could theoretically tear a JSONL line mid-read.
+
+### Implemented
+1. `daemon/security.py` `check_rate_limit`: compute limit exceed under `_rate_lock`, then call `set_alarm` only after the lock is released.
+2. `shared/protocol.py` `parse_command`: one `body.split(None, 1)` for first token + remainder; `cmd` / builtins-with-args / aliases use the same rest string.
+3. `shared/config.py` `command_prefix`: empty/whitespace → `"!"`; `_validate` warns on empty prefix and on `?` (Receiver collision).
+4. `daemon/logger.py` `export_recent`: hold `_lock` for the whole read + write of the export file.
+5. Tests: multi-word input/`!cmd`, empty prefix fallback.
+
+### Breakage check (fact-checked multiple times)
+- Rate-limit still returns `(False, msg, retry_after)` and still sets alarm when configured; only lock ordering changed.
+- Valid prefixes and normal commands parse identically (unit tests for help/status/ping/input/mouse still pass conceptually; new cases cover cmd/spaces).
+- Non-empty prefix unchanged; only empty/whitespace becomes `!`.
+- Export still returns `None` when no logs; content assembly logic unchanged aside from locking.
+- No change to approval, allowlist, shell execution, lock/alarm/sudomode TTL, password redaction, or whitelist defaults.
+- Existing installs: `git pull` + restart daemon picks up changes; no config migration required.
+
+### Notes
+- Did not change permissive defaults (whitelist off, unrestricted mode).
+- Android remote/receiver and Chronos-pi not modified this pass.
+- No further logic bugs found in the hardened core after this re-read.
+
 ## 2026-08-26 – Full re-read + resilient numeric config
 
 ### Read-first review
