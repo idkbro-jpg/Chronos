@@ -240,6 +240,10 @@ def check_rate_limit(user_id: int) -> tuple[bool, str, int]:
     if not rate_limit_enabled():
         return True, "", 0
 
+    trigger_alarm = False
+    msg = ""
+    retry_after = 0
+
     with _rate_lock:
         _load_rate_hits_unlocked()
 
@@ -256,12 +260,16 @@ def check_rate_limit(user_id: int) -> tuple[bool, str, int]:
             retry_after = max(1, int(window - (now - oldest)) + 1)
             msg = f"rate limit: {limit}/{window}s exceeded by user {user_id}"
             if rate_limit_triggers_alarm():
-                set_alarm(True, msg)
-            return False, msg, retry_after
+                trigger_alarm = True
+            # Do not call set_alarm while holding _rate_lock (avoids nested locks).
+        else:
+            q.append(now)
+            _save_rate_hits_unlocked()
+            return True, "", 0
 
-        q.append(now)
-        _save_rate_hits_unlocked()
-        return True, "", 0
+    if trigger_alarm:
+        set_alarm(True, msg)
+    return False, msg, retry_after
 
 
 def commands_blocked() -> tuple[bool, str]:

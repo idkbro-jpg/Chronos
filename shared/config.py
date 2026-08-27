@@ -90,18 +90,26 @@ def _validate(cfg: dict[str, Any]) -> None:
     try:
         disc = cfg.get("discord") or {}
         if disc.get("whitelist_enabled") and not (disc.get("allowed_user_ids") or []):
-            print("[Config] WARNING: whitelist_enabled=true but allowed_user_ids is empty \u2192 all users denied")
+            print("[Config] WARNING: whitelist_enabled=true but allowed_user_ids is empty → all users denied")
         if not disc.get("whitelist_enabled"):
             print(
-                "[Config] \u26a0\ufe0f  SECURITY WARNING: whitelist is OFF. "
+                "[Config] ⚠️  SECURITY WARNING: whitelist is OFF. "
                 "Anyone who can post in the command channel can propose shell commands "
                 "on this machine (after reaction approval). "
                 "Set discord.whitelist_enabled: true and list your Discord user id(s)."
             )
+        prefix = str(disc.get("command_prefix") or "").strip()
+        if not prefix:
+            print("[Config] WARNING: discord.command_prefix is empty → falling back to '!' at runtime")
+        elif prefix == "?":
+            print(
+                "[Config] WARNING: command_prefix '?' collides with Android Receiver local commands "
+                "(?status, ?ping). Prefer '!' or another non-? prefix."
+            )
         approval = cfg.get("approval") or {}
         if not (approval.get("allowed_user_ids") or []):
             print(
-                "[Config] NOTE: approval.allowed_user_ids is empty \u2192 "
+                "[Config] NOTE: approval.allowed_user_ids is empty → "
                 "any non-bot user can approve/deny reactions."
             )
         luks = cfg.get("luks") or {}
@@ -112,7 +120,7 @@ def _validate(cfg: dict[str, Any]) -> None:
         exec_cfg = cfg.get("execution") or {}
         mode = str(exec_cfg.get("mode") or "unrestricted").lower()
         if mode not in ("unrestricted", "allowlist"):
-            print(f"[Config] WARNING: unknown execution.mode={mode!r} \u2013 treating as unrestricted")
+            print(f"[Config] WARNING: unknown execution.mode={mode!r} – treating as unrestricted")
         if mode == "allowlist" and not (exec_cfg.get("allowed_patterns") or []):
             print("[Config] WARNING: execution.mode=allowlist but allowed_patterns is empty")
         for key, section in (
@@ -147,9 +155,9 @@ def load_config(force: bool = False) -> dict[str, Any]:
                 cfg = _deep_merge(cfg, data)
             print(f"[Config] Loaded {CONFIG_FILE}")
         except Exception as e:
-            print(f"[Config] Failed to load config.yml: {e} \u2013 using defaults")
+            print(f"[Config] Failed to load config.yml: {e} – using defaults")
     else:
-        print(f"[Config] No config.yml at {CONFIG_FILE} \u2013 using defaults")
+        print(f"[Config] No config.yml at {CONFIG_FILE} – using defaults")
     _validate(cfg)
     _cfg = cfg
     _loaded = True
@@ -179,7 +187,9 @@ def command_channel_id() -> int:
 
 
 def command_prefix() -> str:
-    return str(get()["discord"].get("command_prefix") or "!")
+    raw = str(get()["discord"].get("command_prefix") or "").strip()
+    # Empty prefix would make every message a command — refuse and use default.
+    return raw if raw else "!"
 
 
 def whitelist_enabled() -> bool:

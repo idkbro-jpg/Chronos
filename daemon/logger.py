@@ -63,7 +63,7 @@ def _sanitize_extra(extra: dict | None) -> dict | None:
                 safe["password_len"] = len(v)
             continue
         if isinstance(v, str) and len(v) > 8000:
-            safe[k] = v[:8000] + "\u2026"
+            safe[k] = v[:8000] + "…"
         else:
             safe[k] = v
     return safe or None
@@ -142,7 +142,7 @@ def _print_human(
             for line in out.splitlines()[:80]:
                 print(f"[Daemon]   stdout| {line}", flush=True)
             if out.count("\n") >= 80:
-                print("[Daemon]   stdout| \u2026 (truncated)", flush=True)
+                print("[Daemon]   stdout| … (truncated)", flush=True)
         if err:
             for line in err.splitlines()[:40]:
                 print(f"[Daemon]   stderr| {line}", flush=True)
@@ -166,15 +166,22 @@ def export_recent(max_bytes: int = 7_000_000) -> Path | None:
     out = d / "export-latest.txt"
     total = 0
     parts: list[str] = []
-    for fp in reversed(files):
-        chunk = fp.read_text(encoding="utf-8", errors="replace")
-        if total + len(chunk) > max_bytes:
-            remain = max_bytes - total
-            if remain > 0:
-                parts.append(chunk[-remain:])
-            break
-        parts.append(chunk)
-        total += len(chunk)
+    # Hold the same lock as writers so we do not read a torn line mid-append.
+    with _lock:
+        for fp in reversed(files):
+            try:
+                chunk = fp.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if total + len(chunk) > max_bytes:
+                remain = max_bytes - total
+                if remain > 0:
+                    parts.append(chunk[-remain:])
+                break
+            parts.append(chunk)
+            total += len(chunk)
 
-    out.write_text("".join(parts), encoding="utf-8")
+        if not parts:
+            return None
+        out.write_text("".join(parts), encoding="utf-8")
     return out

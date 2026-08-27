@@ -34,6 +34,29 @@ class TestProtocol(unittest.TestCase):
             self.assertEqual(parse_command("!input alt p"), "__INPUT__:alt p")
             self.assertEqual(parse_command("!mouse click"), "__MOUSE__:click")
 
+    def test_parse_cmd_and_spaces(self):
+        with mock.patch("shared.protocol.command_prefix", return_value="!"):
+            with mock.patch("shared.protocol.resolve_alias", return_value=None):
+                from shared.protocol import parse_command
+
+                self.assertEqual(parse_command("!cmd echo hi"), "echo hi")
+                self.assertEqual(parse_command("!input text:hello world"), "__INPUT__:text:hello world")
+                self.assertIsNone(parse_command("!"))
+                self.assertIsNone(parse_command("!cmd"))
+
+
+class TestConfigPrefix(unittest.TestCase):
+    def test_empty_prefix_falls_back(self):
+        with mock.patch("shared.config.get", return_value={"discord": {"command_prefix": ""}}):
+            from shared.config import command_prefix
+
+            self.assertEqual(command_prefix(), "!")
+
+        with mock.patch("shared.config.get", return_value={"discord": {"command_prefix": "  "}}):
+            from shared.config import command_prefix
+
+            self.assertEqual(command_prefix(), "!")
+
 
 class TestPolicy(unittest.TestCase):
     def test_unrestricted_allows(self):

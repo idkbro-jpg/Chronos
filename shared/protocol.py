@@ -61,9 +61,10 @@ def parse_command(content: str) -> str | None:
     if not body:
         return None
 
-    lower = body.lower()
-    first = lower.split()[0]
-    rest = body[len(body.split()[0]):].strip()
+    # Single split: first token + optional remainder (preserves inner spaces in rest)
+    parts = body.split(None, 1)
+    first = parts[0].lower()
+    rest = parts[1] if len(parts) > 1 else ""
 
     if first in BUILTINS_WITH_ARGS:
         return f"{BUILTINS_WITH_ARGS[first]}:{rest}"
@@ -71,16 +72,13 @@ def parse_command(content: str) -> str | None:
     if first in BUILTINS:
         return BUILTINS[first]
 
-    if lower.startswith("cmd "):
-        return body[4:].strip() or None
+    if first == "cmd":
+        return rest or None
 
-    word = body.split()[0]
-    rest2 = body[len(word):].strip()
-
-    aliased = resolve_alias(word)
+    aliased = resolve_alias(parts[0])
     if aliased is not None:
-        if rest2:
-            return f"{aliased} {rest2}"
+        if rest:
+            return f"{aliased} {rest}"
         return aliased
 
     return body
@@ -92,7 +90,7 @@ def format_alias_list() -> str:
     if aliases:
         for name, cmd in sorted(aliases.items()):
             display = cmd if len(cmd) <= 80 else cmd[:77] + "..."
-            lines.append(f"{name:12} \u2192 {display}")
+            lines.append(f"{name:12} → {display}")
     else:
         lines.append("(none)")
     lines.append("```")
@@ -113,7 +111,7 @@ def format_help() -> str:
         f"{p}status               lock / alarm / sudomode / whitelist / luks\n"
         f"{p}aliases              list command shortcuts\n"
         f"{p}reload               reload config.yml + aliases.yml\n"
-        f"{p}lock                 lock the machine (needs \u2705 unless sudomode)\n"
+        f"{p}lock                 lock the machine (needs ✅ unless sudomode)\n"
         f"{p}unlock               how to unlock (DM only)\n"
         f"{p}sudomode             status; enable via DM with lock password\n"
         f"{p}alarm                alarm status\n"
@@ -121,14 +119,14 @@ def format_help() -> str:
         f"{p}exportlog / {p}logs    upload recent logs\n"
         f"{p}history / {p}hist      recent executed commands\n"
         f"{p}last                 show last executed command\n"
-        f"{p}input <keys|text:\u2026>  simulate keyboard\n"
+        f"{p}input <keys|text:…>  simulate keyboard\n"
         f"{p}mouse <spec>         simulate mouse\n"
         f"{p}luksunlock           unlock configured LUKS volume\n"
         f"{p}<alias>              run an alias from aliases.yml\n"
         f"{p}cmd <shell>          run a raw shell command\n"
         f"{p}<any shell command>  same as cmd (after approval)\n"
         f"```\n"
-        f"_Most powerful actions need \u2705 unless **sudomode** is on._\n"
+        f"_Most powerful actions need ✅ unless **sudomode** is on._\n"
         f"_Unlock / sudomode password: only in a **DM** to the bot._\n"
         f"_Logs: `journalctl --user -u chronos-daemon -f` and `logs/chronos-*.log`._"
     )

@@ -1,5 +1,21 @@
 # Chronos changelog
 
+## 2026-08-27 – lock hygiene, parse clarity, empty prefix guard
+
+### Robustness
+- **Rate-limit alarm**: when the limit is exceeded, `set_alarm` runs *after* releasing `_rate_lock` (no nested rate+flag locks).
+- **`parse_command`**: single `split(None, 1)` for the command body — clearer, same behaviour for normal input; multi-word `!input text:…` / `!cmd …` preserved.
+- **Empty `command_prefix`**: falls back to `!` at runtime (empty prefix would treat every message as a command). Soft warning on load; also warns if prefix is `?` (Receiver collision).
+- **`export_recent`**: holds the logger write lock while reading log files so concurrent appends cannot tear lines mid-export.
+
+### Tests
+- Extra protocol cases (`!cmd`, multi-word input, bare prefix).
+- Empty / whitespace-only prefix → `!`.
+
+### Notes
+- No change to allowlist, approval, lock/alarm/sudomode semantics, shell execution, or password logging.
+- Valid configs and normal prefixes behave identically.
+
 ## 2026-08-26 – resilient numeric config values
 
 ### Robustness
