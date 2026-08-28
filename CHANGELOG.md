@@ -1,5 +1,19 @@
 # Chronos changelog
 
+## 2026-08-28 – DM whitelist, alarm markdown, positive numeric guards
+
+### Security / robustness
+- **DM unlock / sudomode**: when `whitelist_enabled` is true, non-allowlisted users get `Not on whitelist.` and cannot trigger scrypt or the global ALARM with a guessed password. Whitelist-off behaviour is unchanged.
+- **`!alarm` reply**: missing closing backtick on `reason=` is fixed.
+- **Positive numeric config**: `0` / negative values for approval timeout, exec timeout, max output, rate-limit max/window, and history max-entries now fall back to defaults. Prevents `max_commands: 0` from rate-limiting every command, and `max_entries: 0` from unbounded history writes.
+
+### Tests
+- `_parse_positive_int` vs `_parse_int(0)` (audit channel may still be `0`).
+
+### Notes
+- Valid positive integers behave identically.
+- No change to approval flow, allowlist shell policy, lock/alarm/sudomode TTL, or password logging.
+
 ## 2026-08-27 – lock hygiene, parse clarity, empty prefix guard
 
 ### Robustness
