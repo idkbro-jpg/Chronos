@@ -45,6 +45,18 @@ class TestProtocol(unittest.TestCase):
                 self.assertIsNone(parse_command("!cmd"))
 
 
+class TestConfigNumeric(unittest.TestCase):
+    def test_positive_int_rejects_zero_and_negative(self):
+        from shared.config import _parse_positive_int, _parse_int
+
+        self.assertEqual(_parse_positive_int(0, 20), 20)
+        self.assertEqual(_parse_positive_int(-5, 20), 20)
+        self.assertEqual(_parse_positive_int("nope", 20), 20)
+        self.assertEqual(_parse_positive_int(7, 20), 7)
+        # 0 remains valid for fields like audit_channel_id
+        self.assertEqual(_parse_int(0, 99), 0)
+
+
 class TestConfigPrefix(unittest.TestCase):
     def test_empty_prefix_falls_back(self):
         with mock.patch("shared.config.get", return_value={"discord": {"command_prefix": ""}}):
