@@ -221,6 +221,13 @@ async def _handle_dm(message: discord.Message) -> None:
     uid = message.author.id
     uname = str(message.author)
 
+    # When whitelist is on, strangers must not be able to burn scrypt
+    # or trip the global ALARM with a wrong unlock/sudomode guess.
+    if whitelist_enabled() and not _user_allowed(uid):
+        log_event("denied", user_id=uid, user_name=uname, detail="dm not on whitelist")
+        await message.reply("Not on whitelist.")
+        return
+
     # unlock <password>
     if low.startswith("unlock ") or low.startswith("!unlock "):
         until = _unlock_fail_until.get(uid, 0)
@@ -381,7 +388,7 @@ async def _dispatch_command(
 
     if cmd == "__ALARM_STATUS__":
         await message.reply(
-            f"alarm=`{is_alarm()}` reason=`{alarm_reason() or '-'}\n"
+            f"alarm=`{is_alarm()}` reason=`{alarm_reason() or '-'}`\n"
             f"Clear via DM `unlock <password>` or delete `state/ALARM`."
         )
         return
