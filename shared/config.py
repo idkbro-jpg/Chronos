@@ -217,6 +217,12 @@ def _parse_int(value: Any, default: int) -> int:
         return default
 
 
+def _parse_positive_int(value: Any, default: int) -> int:
+    """Like _parse_int, but treat 0 / negative as invalid (use default)."""
+    n = _parse_int(value, default)
+    return n if n > 0 else default
+
+
 def allowed_command_user_ids() -> list[int]:
     return _parse_id_list(get()["discord"].get("allowed_user_ids"))
 
@@ -226,7 +232,7 @@ def audit_channel_id() -> int:
 
 
 def approval_timeout() -> int:
-    return _parse_int(get()["approval"].get("timeout_seconds"), 60)
+    return _parse_positive_int(get()["approval"].get("timeout_seconds"), 60)
 
 
 def approve_emoji() -> str:
@@ -242,7 +248,7 @@ def allowed_approval_user_ids() -> list[int]:
 
 
 def exec_timeout() -> int:
-    return _parse_int(get()["execution"].get("timeout_seconds"), 300)
+    return _parse_positive_int(get()["execution"].get("timeout_seconds"), 300)
 
 
 def use_shell() -> bool:
@@ -250,7 +256,7 @@ def use_shell() -> bool:
 
 
 def max_output_chars() -> int:
-    return _parse_int(get()["execution"].get("max_output_chars"), 1800)
+    return _parse_positive_int(get()["execution"].get("max_output_chars"), 1800)
 
 
 def strip_ansi() -> bool:
@@ -289,11 +295,11 @@ def rate_limit_enabled() -> bool:
 
 
 def rate_limit_max() -> int:
-    return _parse_int(get().get("rate_limit", {}).get("max_commands"), 20)
+    return _parse_positive_int(get().get("rate_limit", {}).get("max_commands"), 20)
 
 
 def rate_limit_window() -> int:
-    return _parse_int(get().get("rate_limit", {}).get("window_seconds"), 60)
+    return _parse_positive_int(get().get("rate_limit", {}).get("window_seconds"), 60)
 
 
 def rate_limit_triggers_alarm() -> bool:
@@ -329,7 +335,7 @@ def history_enabled() -> bool:
 
 
 def history_max_entries() -> int:
-    return _parse_int(get().get("history", {}).get("max_entries"), 30)
+    return _parse_positive_int(get().get("history", {}).get("max_entries"), 30)
 
 
 def luks_enabled() -> bool:
