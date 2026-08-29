@@ -20,6 +20,15 @@ class TestDiscordUtils(unittest.TestCase):
         self.assertIn("\u200b", escape_backticks("a`b"))
         self.assertNotIn("```", safe_inline("x```y", 50))
 
+    def test_chunk_text(self):
+        from shared.discord_utils import chunk_text
+
+        self.assertEqual(chunk_text("", 10), [])
+        self.assertEqual(chunk_text("abcdef", 2), ["ab", "cd", "ef"])
+        self.assertEqual(chunk_text("hi", 10), ["hi"])
+        # Non-positive limit: do not loop forever — return the original string
+        self.assertEqual(chunk_text("abc", 0), ["abc"])
+
 
 class TestProtocol(unittest.TestCase):
     def test_parse_help(self):
@@ -55,6 +64,12 @@ class TestConfigNumeric(unittest.TestCase):
         self.assertEqual(_parse_positive_int(7, 20), 7)
         # 0 remains valid for fields like audit_channel_id
         self.assertEqual(_parse_int(0, 99), 0)
+
+    def test_max_output_chunks_default_positive(self):
+        from shared.config import _parse_positive_int
+
+        self.assertEqual(_parse_positive_int(0, 6), 6)
+        self.assertEqual(_parse_positive_int(3, 6), 3)
 
 
 class TestConfigPrefix(unittest.TestCase):
@@ -119,6 +134,15 @@ class TestPasswordHash(unittest.TestCase):
         stored = hash_password("correct-horse-battery")
         self.assertTrue(verify_password("correct-horse-battery", stored))
         self.assertFalse(verify_password("wrong", stored))
+
+
+class TestExecutorTimeout(unittest.TestCase):
+    def test_timeout_returns_code_1_and_message(self):
+        from daemon.executor import run_command
+
+        rc, stdout, stderr = run_command("sleep 5", timeout=1)
+        self.assertEqual(rc, 1)
+        self.assertIn("timed out", stderr.lower())
 
 
 class TestHistory(unittest.TestCase):
