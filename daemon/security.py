@@ -225,10 +225,18 @@ def _save_rate_hits_unlocked() -> None:
         now = time.time()
         window = rate_limit_window()
         out: dict[str, list[float]] = {}
+        stale: list[int] = []
         for uid, q in _hits.items():
             recent = [t for t in q if now - t <= window]
             if recent:
                 out[str(uid)] = recent
+                # Keep the in-memory deque aligned with what we persist
+                q.clear()
+                q.extend(recent)
+            else:
+                stale.append(uid)
+        for uid in stale:
+            _hits.pop(uid, None)
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(out), encoding="utf-8")
         tmp.replace(path)
