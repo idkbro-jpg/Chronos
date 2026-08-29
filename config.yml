@@ -41,6 +41,9 @@ execution:
   use_shell: true
   # Max chars per stdout/stderr Discord reply chunk. Default / invalid → 1800
   max_output_chars: 1800
+  # Max Discord messages per stream (stdout and stderr separately).
+  # Default / invalid / ≤0 → 6. Prevents a huge command from flooding the channel.
+  max_output_chunks: 6
   strip_ansi: true
   # unrestricted = any approved shell command
   # allowlist   = only commands matching allowed_patterns
