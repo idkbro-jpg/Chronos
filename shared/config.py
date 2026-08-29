@@ -38,6 +38,7 @@ def _defaults() -> dict[str, Any]:
             "timeout_seconds": 300,
             "use_shell": True,
             "max_output_chars": 1800,
+            "max_output_chunks": 6,
             "strip_ansi": True,
             "mode": "unrestricted",
             "allowed_patterns": [],
@@ -257,6 +258,11 @@ def use_shell() -> bool:
 
 def max_output_chars() -> int:
     return _parse_positive_int(get()["execution"].get("max_output_chars"), 1800)
+
+
+def max_output_chunks() -> int:
+    """Max Discord reply chunks per stdout/stderr stream (default 6)."""
+    return _parse_positive_int(get()["execution"].get("max_output_chunks"), 6)
 
 
 def strip_ansi() -> bool:
