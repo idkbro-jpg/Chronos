@@ -108,9 +108,12 @@ def run_command(command: str, timeout: int | None = None) -> Tuple[int, str, str
                 stdout_b, stderr_b = proc.communicate(timeout=2)
             except subprocess.TimeoutExpired:
                 stdout_b, stderr_b = b"", b""
-            return 1, _clean(_safe_decode(stdout_b)), (
-                f"Command timed out after {timeout} seconds"
-            )
+            stdout = _clean(_safe_decode(stdout_b))
+            stderr = _clean(_safe_decode(stderr_b))
+            timeout_msg = f"Command timed out after {timeout} seconds"
+            if stderr:
+                timeout_msg = f"{timeout_msg}\n{stderr}"
+            return 1, stdout, timeout_msg
 
         stdout = _clean(_safe_decode(stdout_b))
         stderr = _clean(_safe_decode(stderr_b))
