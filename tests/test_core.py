@@ -29,6 +29,23 @@ class TestDiscordUtils(unittest.TestCase):
         # Non-positive limit: do not loop forever — return the original string
         self.assertEqual(chunk_text("abc", 0), ["abc"])
 
+    def test_format_exec_replies_caps_chunks(self):
+        from shared.discord_utils import format_exec_replies, fit_discord_message
+
+        huge = "x" * 20
+        replies = format_exec_replies(0, huge, "", char_limit=5, max_chunks=2)
+        # exit + 2 stdout chunks + omit note
+        self.assertEqual(replies[0], "**Exit code:** `0`")
+        self.assertEqual(len(replies), 4)
+        self.assertTrue(any("omitted" in r for r in replies))
+        self.assertFalse(any("stderr" in r for r in replies))
+
+        empty = format_exec_replies(1, "", "", char_limit=10, max_chunks=6)
+        self.assertEqual(empty[-1], "_No output_")
+
+        self.assertEqual(fit_discord_message("hi", 10), "hi")
+        self.assertEqual(len(fit_discord_message("abcdefghij", 8)), 8)
+
 
 class TestProtocol(unittest.TestCase):
     def test_parse_help(self):
