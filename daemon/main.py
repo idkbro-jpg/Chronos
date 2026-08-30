@@ -93,3 +93,11 @@ def _user_allowed(uid: int) -> bool:
     if not whitelist_enabled():
         return True
     return uid in allowed_command_user_ids()
+
+
+async def _maybe_approve(message: discord.Message, summary: str) -> bool:
+    """Skip \u2705 when sudomode is active."""
+    if is_sudomode():
+        print(f"[Daemon] sudomode: auto-approve {summary!r}", flush=True)
+        return True
+    return await request_approval(message, summary, client)
