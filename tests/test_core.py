@@ -45,6 +45,16 @@ class TestDiscordUtils(unittest.TestCase):
 
         self.assertEqual(fit_discord_message("hi", 10), "hi")
         self.assertEqual(len(fit_discord_message("abcdefghij", 8)), 8)
+        # tiny limits must not slice with a negative index
+        from shared.discord_utils import truncate
+
+        self.assertEqual(truncate("abcdef", 2), "ab")
+        self.assertEqual(fit_discord_message("abcdef", 2), "ab")
+
+        # oversized char_limit must still produce Discord-safe replies
+        huge = "y" * 5000
+        capped = format_exec_replies(0, huge, "", char_limit=9000, max_chunks=1)
+        self.assertTrue(all(len(r) <= 2000 for r in capped))
 
 
 class TestProtocol(unittest.TestCase):
@@ -151,6 +161,8 @@ class TestPasswordHash(unittest.TestCase):
         stored = hash_password("correct-horse-battery")
         self.assertTrue(verify_password("correct-horse-battery", stored))
         self.assertFalse(verify_password("wrong", stored))
+        self.assertFalse(verify_password("x", "not-a-hash"))
+        self.assertFalse(verify_password("x", "scrypt$00$ff"))
 
 
 class TestExecutorTimeout(unittest.TestCase):
