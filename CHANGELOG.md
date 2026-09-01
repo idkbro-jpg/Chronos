@@ -1,5 +1,20 @@
 # Chronos changelog
 
+## 2026-09-01 – Discord-safe output, safer truncate, password compare
+
+### Robustness
+- **Output replies**: each chunk is hard-capped under Discord’s 2000-character limit even if `max_output_chars` is set too high. A failed chunk send no longer aborts the handler uncaught; remaining chunks are skipped after a short error reply.
+- **`truncate` / `fit_discord_message`**: limits of 1–3 no longer use a negative slice (`limit - 3`).
+- **`!last`**: usernames with backticks are escaped so the reply markdown cannot break.
+- **Lock password verify**: compare raw digest bytes (same length only) instead of hex strings, so a truncated stored hash cannot raise.
+
+### Tests
+- Tiny truncate/fit limits, oversized `char_limit` replies stay ≤ 2000, malformed stored hashes return False.
+
+### Notes
+- Default `max_output_chars` of 1800 is unchanged.
+- No change to approval, allowlist, lock/alarm/sudomode, whitelist defaults, or password logging.
+
 ## 2026-08-31 – restore truncated daemon + apply output cap / shared DM cooldown
 
 ### Critical
