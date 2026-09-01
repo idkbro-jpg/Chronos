@@ -16,9 +16,17 @@ def escape_backticks(text: str) -> str:
     return text.replace("`", "`\u200b")
 
 
+# Discord message cap is 2000. Leave room for titles + fences.
+_DISCORD_CHUNK_CAP = 1800
+
+
 def truncate(text: str, limit: int = 200) -> str:
+    if limit <= 0:
+        return text
     if len(text) <= limit:
         return text
+    if limit <= 3:
+        return text[:limit]
     return text[: limit - 3] + "..."
 
 
@@ -63,6 +71,10 @@ def format_stream_replies(
         return []
     if max_chunks <= 0:
         max_chunks = 1
+    # A too-large char_limit would produce replies Discord rejects (2000).
+    if char_limit <= 0:
+        char_limit = _DISCORD_CHUNK_CAP
+    char_limit = min(char_limit, _DISCORD_CHUNK_CAP)
     chunks = chunk_text(text, char_limit)
     out: list[str] = []
     shown = chunks[:max_chunks]
@@ -100,4 +112,6 @@ def fit_discord_message(text: str, limit: int = 1900) -> str:
         return text
     if len(text) <= limit:
         return text
+    if limit <= 3:
+        return text[:limit]
     return text[: limit - 3] + "..."
