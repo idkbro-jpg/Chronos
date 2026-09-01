@@ -130,6 +130,7 @@ def _validate(cfg: dict[str, Any]) -> None:
             ("max_commands", "rate_limit"),
             ("window_seconds", "rate_limit"),
             ("max_output_chars", "execution"),
+            ("max_output_chunks", "execution"),
         ):
             sec = cfg.get(section) or {}
             val = sec.get(key)
