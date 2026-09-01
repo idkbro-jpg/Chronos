@@ -110,7 +110,10 @@ def verify_password(password: str, stored: str) -> bool:
             p=1,
             dklen=32,
         )
-        return secrets.compare_digest(dk.hex(), hash_hex)
+        expected = bytes.fromhex(hash_hex)
+        if len(expected) != len(dk):
+            return False
+        return secrets.compare_digest(dk, expected)
     except Exception:
         return False
 
@@ -130,7 +133,7 @@ def check_lock_password(password: str) -> bool:
     return verify_password(password, path.read_text(encoding="utf-8"))
 
 
-# --- sudomode (skip ✅ approval for a limited time after DM password) ---
+# --- sudomode (skip \u2705 approval for a limited time after DM password) ---
 
 def is_sudomode() -> bool:
     with _flag_lock:
