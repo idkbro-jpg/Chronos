@@ -4,8 +4,8 @@ Chronos interactive setup.
 
     python setup.py
 
-Creates/updates .env, config.yml, lock password, optional systemd user unit.
-Optionally creates a venv and installs requirements.txt.
+Creates/updates .env, config.yml, optional permissions.yml, lock password,
+optional systemd user unit. Optionally creates a venv and installs requirements.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from __future__ import annotations
 import getpass
 import os
 import re
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -147,6 +148,7 @@ execution:
   timeout_seconds: {exec_timeout}
   use_shell: true
   max_output_chars: 1800
+  max_output_chunks: 6
   strip_ansi: true
   # unrestricted | allowlist
   mode: {exec_mode}
@@ -174,6 +176,7 @@ history:
 
 files:
   aliases: aliases.yml
+  # permissions.yml is optional — see permissions.example.yml
 
 luks:
   enabled: false
@@ -186,6 +189,117 @@ luks:
     path = ROOT / "config.yml"
     path.write_text(text, encoding="utf-8")
     print(f"  wrote {path}")
+
+
+def write_permissions(
+    role_map: dict[str, str],
+) -> None:
+    """Write permissions.yml from role_map (Discord role name/ID → rank)."""
+    example = ROOT / "permissions.example.yml"
+    if example.is_file() and not role_map:
+        shutil.copy(example, ROOT / "permissions.yml")
+        print(f"  wrote permissions.yml (from example)")
+        return
+
+    lines = [
+        "# Chronos permissions (created by setup.py)",
+        "# After changes: !perm reload  or  !reload",
+        "",
+        "special_permissions:",
+        '  sudo: "Bypass every permission check (dangerous)"',
+        '  manage_permissions: "Use !perm and edit this config / user overrides"',
+        '  manage_bot: "Restart, shutdown, change prefix, etc."',
+        '  lock: "Lock the machine"',
+        '  unlock: "Unlock the machine (DM password still required)"',
+        '  sudomode: "Enable / view sudomode"',
+        '  screenshot: "Take screenshots"',
+        '  input: "Keyboard simulation"',
+        '  mouse: "Mouse simulation"',
+        '  luksunlock: "Unlock configured LUKS volume"',
+        '  exportlog: "Export / view logs"',
+        '  history: "View command history"',
+        "",
+        "role_map:",
+    ]
+    if role_map:
+        for key, rank in role_map.items():
+            lines.append(f'  "{key}": {rank}')
+    else:
+        lines.append('  "Owner": owner')
+        lines.append('  "Admin": admin')
+        lines.append('  "Moderator": mod')
+        lines.append('  "Helper": helper')
+
+    lines.extend(
+        [
+            "",
+            "ranks:",
+            "  helper:",
+            "    level: 30",
+            "    permissions:",
+            "      - history",
+            "      - screenshot",
+            "",
+            "  mod:",
+            "    level: 50",
+            "    permissions:",
+            "      - lock",
+            "      - input",
+            "      - mouse",
+            "      - exportlog",
+            "",
+            "  admin:",
+            "    level: 80",
+            "    permissions:",
+            "      - manage_bot",
+            "      - manage_permissions",
+            "      - sudomode",
+            "      - luksunlock",
+            "      - unlock",
+            "",
+            "  owner:",
+            "    level: 100",
+            "    permissions:",
+            '      - "*"',
+            "",
+            "# user_overrides:  # filled by !perm give / remove",
+        ]
+    )
+
+    path = ROOT / "permissions.yml"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"  wrote {path}")
+
+
+def setup_permissions_optional() -> None:
+    """Ask whether to configure Discord role → Chronos rank mapping."""
+    print()
+    print("Chronos can map Discord roles to ranks (owner / admin / mod / helper).")
+    print("Discord still handles ban/kick/etc. — this only gates Chronos commands.")
+    if not ask_yes_no("Do you want custom Discord roles for Chronos permissions?", False):
+        print("  Skipping permissions.yml (you can copy permissions.example.yml later).")
+        return
+
+    print()
+    print("  Enter Discord role **name** or **ID** for each rank.")
+    print("  Leave empty to skip that rank.")
+    print("  (Developer Mode → Server Settings → Roles → right-click → Copy ID)")
+    print()
+
+    role_map: dict[str, str] = {}
+    for rank, label in (
+        ("owner", "Owner rank"),
+        ("admin", "Admin rank"),
+        ("mod", "Moderator rank"),
+        ("helper", "Helper rank"),
+    ):
+        val = ask(f"  {label} (role name or ID)", "").strip()
+        if val:
+            role_map[val] = rank
+
+    if not role_map:
+        print("  No roles entered — writing defaults from example.")
+    write_permissions(role_map)
 
 
 def set_master_password() -> None:
@@ -279,6 +393,8 @@ def defaults() -> None:
     (ROOT / "secrets").mkdir(exist_ok=True)
     if not (ROOT / ".env").exists() and (ROOT / ".env.example").exists():
         print("  no .env yet — copy from .env.example and fill token + channel id")
+    if not (ROOT / "config.yml").exists() and (ROOT / "config.example.yml").exists():
+        print("  no config.yml yet — copy from config.example.yml")
     print("Done (minimal).")
 
 
@@ -332,6 +448,9 @@ def wizard() -> None:
     rate_window = ask_int("Rate limit window (seconds)", 60, 5, 3600)
     alarm_blocks = ask_yes_no("Alarm blocks all commands until unlock?", True)
 
+    # Optional role-based permissions
+    setup_permissions_optional()
+
     print()
     print("Writing files…")
     (ROOT / "state").mkdir(exist_ok=True)
@@ -368,6 +487,7 @@ def wizard() -> None:
     print()
     print("=== Next steps ===")
     print("1. Discord Developer Portal → Bot → enable MESSAGE CONTENT INTENT")
+    print("   + Server Members Intent (needed for role permissions)")
     print("2. Invite bot with: Send Messages, Read Message History, Add Reactions")
     print("3. systemctl --user enable --now chronos-daemon.service")
     print("4. journalctl --user -u chronos-daemon.service -f")
