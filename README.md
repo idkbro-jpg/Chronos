@@ -2,7 +2,7 @@
 
 **Secure remote command execution via Discord** — for accessibility and remote access on Linux.
 
-A daemon on your machine watches a Discord channel, waits for ✅ approval, then runs the command. Optional lock / unlock, screenshots, keyboard & mouse, LUKS, and Android companion apps.
+A daemon on your machine watches a Discord channel, waits for ✅ approval, then runs the command. Optional lock / unlock, screenshots, keyboard & mouse, LUKS, role-based permissions, and Android companion apps.
 
 ---
 
@@ -31,9 +31,11 @@ pip install -r requirements.txt
 python setup.py          # interactive wizard — recommended first run
 ```
 
+The wizard asks about whitelist, timeouts, lock password, systemd unit, and optionally **custom Discord roles** for Chronos permissions.
+
 Then:
 
-1. Discord Developer Portal → Bot → enable **MESSAGE CONTENT INTENT**
+1. Discord Developer Portal → Bot → enable **MESSAGE CONTENT INTENT** + **Server Members Intent** (needed for role permissions)
 2. Invite the bot with: Send Messages, Read Message History, Add Reactions
 3. Start the daemon:
 
@@ -47,6 +49,53 @@ Update later with:
 ```bash
 python update.py
 ```
+
+---
+
+## Local config files (not tracked by git)
+
+| File | Template | Purpose |
+|------|----------|---------|
+| `config.yml` | `config.example.yml` | Prefix, whitelist, timeouts, rate limit, LUKS |
+| `permissions.yml` | `permissions.example.yml` | Discord role → Chronos rank mapping |
+| `.env` | `.env.example` | Bot token + command channel ID |
+
+On a fresh clone:
+
+```bash
+cp config.example.yml config.yml
+cp permissions.example.yml permissions.yml   # only if you want role permissions
+cp .env.example .env
+# edit the copies
+```
+
+`setup.py` can create these for you. Your real `config.yml` / `permissions.yml` stay local and will not be overwritten by `git pull`.
+
+---
+
+## Permissions (optional)
+
+Chronos can map **Discord roles** to ranks (`owner` / `admin` / `mod` / `helper`).  
+Discord still owns ban/kick/channel perms — Chronos only gates its own actions (`sudo`, `screenshot`, aliases, etc.).
+
+**Setup wizard:** when asked  
+`Do you want custom Discord roles for Chronos permissions? [y/N]`  
+answer **Y** and enter your role names or IDs. Answer **N** to skip (everyone with channel access still works via whitelist + approval as before).
+
+**Manual:** edit `permissions.yml` (from the example), then:
+
+```text
+!perm list
+!perm check @user
+!perm give @user permission aegis
+!perm give @user rank mod
+!perm remove @user permission sudo
+!perm reload
+```
+
+Only users with `manage_permissions` (or owner `*`) can use `!perm`.
+
+Higher ranks automatically inherit lower ranks’ permissions.
 
 ---
 
@@ -84,8 +133,9 @@ More detail: [docs/security.md](docs/security.md)
 | `!screenshot` | Capture screen |
 | `!input …` | Keyboard simulation |
 | `!mouse …` | Basic mouse |
-| `!reload` | Reload config + aliases |
+| `!reload` | Reload config + aliases + permissions |
 | `!history` / `!last` | Recent commands |
+| `!perm …` | Permission management (`!perm help`) |
 
 **Unlock / sudomode:** DM only → `unlock <password>` / `sudomode <password>`
 
@@ -118,18 +168,17 @@ Or open the folders in Android Studio and build yourself.
 
 | Path | Purpose |
 |------|---------|
-| `.env` | Token + channel ID (secrets) |
-| `config.yml` | Prefix, whitelist, timeouts, rate limit, LUKS |
+| `.env` | Token + channel ID (secrets, gitignored) |
+| `config.yml` | Local settings (gitignored; from `config.example.yml`) |
+| `permissions.yml` | Role → rank map (gitignored; from `permissions.example.yml`) |
 | `aliases.yml` | Shortcuts (e.g. `!uptime`) |
 | `secrets/` | Lock hash, LUKS material (gitignored) |
 | `setup.py` | First-time / reconfigure wizard |
 | `update.py` | `git pull` + pip + restart daemon |
-| `remote/` / `receiver/` | Android **source** (build APKs locally or use Releases) |
+| `remote/` / `receiver/` | Android **source** |
 | `docs/` | Security, input, LUKS notes |
 
-Compiled APKs are **not** kept in the source tree (they bloat every clone). Use Releases or build from source.
-
-**Config tip:** timeouts, rate-limit numbers, history size, and `audit_channel_id` must be integers. If a value is missing or invalid (e.g. text instead of a number), Chronos keeps running and uses the built-in default for that field (see comments in `config.yml` — e.g. approval timeout → **60**, command timeout → **300**, rate limit → **20** / **60** s, history → **30**). Invalid Discord user IDs in allowlists are skipped the same way.
+**Config tip:** timeouts and similar numbers must be integers. Invalid values fall back to safe defaults (see comments in the example config).
 
 ---
 
@@ -147,7 +196,7 @@ logs/chronos-YYYY-MM-DD.log
 
 - Linux (systemd user services recommended)
 - Python 3.10+
-- Discord bot with Message Content Intent
+- Discord bot with **Message Content Intent** + **Server Members Intent** (for role permissions)
 - Optional: `ydotool` / `wtype` / `xdotool` for keyboard & mouse
 
 Windows is **not** supported yet.

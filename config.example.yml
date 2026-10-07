@@ -1,0 +1,81 @@
+# Chronos configuration (TEMPLATE)
+# Copy to config.yml and edit:
+#   cp config.example.yml config.yml
+#
+# Secrets live in .env + secrets/
+# After changes: !reload  or  systemctl --user restart chronos-daemon
+#
+# Numeric fields: if a value is missing, empty, or not a valid integer,
+# Chronos uses the default shown next to each key (daemon does not crash).
+
+discord:
+  # Bot command prefix in the command channel.
+  # Default "!" — do NOT use "?" here: "?" is reserved by the Android Receiver
+  # for local commands (?status, ?ping) that run on the phone without Discord.
+  command_prefix: "!"
+
+  # SECURITY: if false, anyone who can post in the command channel can propose
+  # shell commands (still needs ✅ approval; if approval.allowed_user_ids is
+  # empty, any non-bot can approve).
+  # Recommended for real use:
+  #   whitelist_enabled: true
+  #   allowed_user_ids: [YOUR_DISCORD_USER_ID]
+  whitelist_enabled: false
+  allowed_user_ids: []
+
+  # Optional: mirror critical events (exec, lock, unlock, luks).
+  # Default / invalid → 0 (off).
+  audit_channel_id: 0
+
+approval:
+  # How long to wait for ✅/❌. Default / invalid → 60
+  timeout_seconds: 60
+  approve_emoji: "✅"
+  deny_emoji: "❌"
+  # Empty = any non-bot user may approve. Restrict in shared servers.
+  allowed_user_ids: []
+
+execution:
+  # Max runtime for a shell command. Default / invalid → 300
+  timeout_seconds: 300
+  use_shell: true
+  max_output_chars: 1800
+  max_output_chunks: 6
+  strip_ansi: true
+  # unrestricted = any approved shell command
+  # allowlist   = only commands matching allowed_patterns
+  mode: unrestricted
+  allowed_patterns: []
+
+rate_limit:
+  enabled: true
+  max_commands: 20
+  window_seconds: 60
+  trigger_alarm: true
+
+security:
+  state_dir: "state"
+  lock_hash_file: "secrets/lock.hash"
+  alarm_blocks_all: true
+
+logging:
+  enabled: true
+  dir: "logs"
+  also_log_denied: true
+
+history:
+  enabled: true
+  max_entries: 30
+
+files:
+  aliases: aliases.yml
+  # Chronos permission ranks live in permissions.yml
+  # (copy from permissions.example.yml). Managed with !perm …
+
+luks:
+  enabled: false
+  device: "/dev/sdX"
+  mapper_name: "crypt_data"
+  password_file: "secrets/luks.enc"
+  machine_secret_file: "secrets/machine.key"
+  post_unlock_command: ""
