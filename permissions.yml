@@ -1,0 +1,82 @@
+# Chronos permissions
+# Only Chronos-specific permissions live here.
+# Discord already handles ban / kick / manage channels etc. — do not duplicate those.
+#
+# After changes: !perm reload   or   !reload
+#
+# Permission names are either:
+#   - special ones listed below (sudo, manage_permissions, …)
+#   - any command / alias name (e.g. aegis, screenshot, uptime, cmd, …)
+#     → just write the name; no need to declare every alias here.
+
+# Special Chronos-only permissions (descriptions for humans + !perm list)
+special_permissions:
+  sudo: "Bypass every permission check (dangerous)"
+  manage_permissions: "Use !perm and edit this config / user overrides"
+  manage_bot: "Restart, shutdown, change prefix, etc."
+  lock: "Lock the machine"
+  unlock: "Unlock the machine (DM password still required)"
+  sudomode: "Enable / view sudomode"
+  screenshot: "Take screenshots"
+  input: "Keyboard simulation"
+  mouse: "Mouse simulation"
+  luksunlock: "Unlock configured LUKS volume"
+  exportlog: "Export / view logs"
+  history: "View command history"
+
+# Discord Role → Chronos rank
+# Supports BOTH role name (string) and role ID (string of digits).
+# Highest matching rank wins; higher ranks inherit all lower ranks.
+role_map:
+  # Examples — replace with your real Discord role names or IDs
+  "Owner": owner
+  # "123456789012345678": owner          # role ID also works
+  "Admin": admin
+  "Moderator": mod
+  "Helper": helper
+
+# Ranks (level = hierarchy). Higher level automatically gets every permission
+# from every rank with a lower level + its own list.
+ranks:
+  helper:
+    level: 30
+    permissions:
+      - history
+      - screenshot          # example — remove if you don't want helpers taking screenshots
+
+  mod:
+    level: 50
+    permissions:
+      - lock
+      - input
+      - mouse
+      - exportlog
+      # add any alias names you want mods to run, e.g.:
+      # - aegis
+      # - uptime
+
+  admin:
+    level: 80
+    permissions:
+      - manage_bot
+      - manage_permissions
+      - sudomode
+      - luksunlock
+      - unlock
+      # admins also inherit everything from mod + helper
+
+  owner:
+    level: 100
+    permissions:
+      - "*"                 # everything, including sudo
+
+# Optional per-user overrides (filled automatically by !perm give / remove)
+# user_overrides:
+#   "987654321098765432":
+#     extra_permissions:
+#       - aegis
+#       - sudo
+#     denied_permissions:
+#       - manage_bot
+#     extra_ranks:
+#       - mod

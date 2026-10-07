@@ -33,6 +33,10 @@ BUILTINS = {
     "history": "__HISTORY__",
     "hist": "__HISTORY__",
     "last": "__LAST__",
+    # Permission system
+    "perm": "__PERM__",
+    "permission": "__PERM__",
+    "permissions": "__PERM__",
 }
 
 BUILTINS_WITH_ARGS = {
@@ -70,6 +74,9 @@ def parse_command(content: str) -> str | None:
         return f"{BUILTINS_WITH_ARGS[first]}:{rest}"
 
     if first in BUILTINS:
+        # For !perm we keep the rest so the handler can parse subcommands
+        if first in ("perm", "permission", "permissions"):
+            return f"__PERM__:{rest}" if rest else "__PERM__"
         return BUILTINS[first]
 
     if first == "cmd":
@@ -96,7 +103,7 @@ def format_alias_list() -> str:
     lines.append("```")
     lines.append(
         "_Built-ins: `!help` `!ping` `!aliases` `!reload` `!lock` `!unlock` `!sudomode` "
-        "`!status` `!screenshot` `!exportlog` `!input` `!mouse` `!history` `!last` `!luksunlock`_"
+        "`!status` `!screenshot` `!exportlog` `!input` `!mouse` `!history` `!last` `!luksunlock` `!perm`_"
     )
     return "\n".join(lines)
 
@@ -110,7 +117,7 @@ def format_help() -> str:
         f"{p}ping                 latency / liveness check\n"
         f"{p}status               lock / alarm / sudomode / whitelist / luks\n"
         f"{p}aliases              list command shortcuts\n"
-        f"{p}reload               reload config.yml + aliases.yml\n"
+        f"{p}reload               reload config.yml + aliases.yml + permissions.yml\n"
         f"{p}lock                 lock the machine (needs ✅ unless sudomode)\n"
         f"{p}unlock               how to unlock (DM only)\n"
         f"{p}sudomode             status; enable via DM with lock password\n"
@@ -122,6 +129,7 @@ def format_help() -> str:
         f"{p}input <keys|text:…>  simulate keyboard\n"
         f"{p}mouse <spec>         simulate mouse\n"
         f"{p}luksunlock           unlock configured LUKS volume\n"
+        f"{p}perm …               permission management (see {p}perm help)\n"
         f"{p}<alias>              run an alias from aliases.yml\n"
         f"{p}cmd <shell>          run a raw shell command\n"
         f"{p}<any shell command>  same as cmd (after approval)\n"
