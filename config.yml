@@ -81,6 +81,8 @@ history:
 
 files:
   aliases: aliases.yml
+  # Chronos permission ranks & Discord role mapping live in permissions.yml
+  # (see that file + shared/permissions.py). Managed with !perm …
 
 luks:
   enabled: false
