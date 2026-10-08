@@ -1,47 +1,47 @@
-# Chronos Android – Send Mode (Beta)
+# Chronos Android – Send Mode (legacy beta)
 
-Kleine Extension-App für Chronos.
+Small companion app for Chronos.
 
-**Aktuell nur Send Mode** mit den drei Notfall-Buttons:
+**Prefer the `remote/` app** (same role, more features). This folder is the older send-only beta.
+
+Emergency buttons:
 
 - **Status** → `!status`
 - **Lock** → `!lock`
 - **Screenshot** → `!screenshot`
 
-Die App postet die Commands einfach in den Discord-Command-Channel.
-Der Daemon behandelt sie genau wie eine normale Nachricht (inkl. Approval, Whitelist, Lock usw.).
+The app posts commands into the Discord command channel.
+The daemon treats them like any other message (approval, whitelist, lock, etc.).
 
-## Voraussetzungen
+## Requirements
 
-- Android Studio (Hedgehog oder neuer empfohlen)
+- Android Studio (Hedgehog or newer recommended)
 - JDK 17+
-- Discord Bot Token (derselbe wie beim Daemon oder ein separater)
-- Command-Channel-ID
+- Discord bot token (same as the daemon, or a separate bot)
+- Command channel ID
 
 ## Setup
 
-1. Repo klonen / `android/` Ordner öffnen
-2. In Android Studio: **Open** → Ordner `android/`
-3. App bauen & auf dem Xiaomi installieren
-4. App öffnen → **Settings** → Bot-Token + Channel-ID eintragen
-5. Buttons benutzen
+1. Clone the repo / open the `android/` folder
+2. In Android Studio: **Open** → `android/`
+3. Build the app and install it on your device
+4. Open the app → **Settings** → enter bot token + channel ID
+5. Use the buttons
 
-## Sicherheit
+## Security
 
-- Token wird nur lokal auf dem Gerät gespeichert (SharedPreferences)
-- Die App braucht **keinen** Gateway – sie sendet nur REST-Nachrichten
-- Alle Sicherheitsfeatures des Daemons bleiben aktiv (Approval, Whitelist, Rate-Limit, Lock …)
+- Token is stored only on the device (SharedPreferences)
+- The app does **not** open a Discord gateway — REST send only
+- All daemon security features stay active (approval, whitelist, rate limit, lock, …)
 
-## Bekannte Einschränkungen (Beta)
+## Known limitations (beta)
 
-- Noch kein freies Command-Feld
-- Noch kein Receive-Modus / WoL
-- Keine schöne Fehlerbehandlung bei Rate-Limits
-- Token im Klartext in SharedPreferences (später EncryptedSharedPreferences)
+- No free-form command field
+- No receive mode / Wake-on-LAN
+- No polished rate-limit error handling
+- Token in plaintext SharedPreferences (later: EncryptedSharedPreferences)
+- Prefix is hardcoded to `!` (use `remote/` for a configurable prefix)
 
-## Nächste Schritte (geplant)
+## Next steps
 
-- Freies Textfeld + Senden
-- Weitere Schnell-Buttons / Aliases
-- Receive-Modus + WoL-Bridge
-- Bessere Token-Speicherung
+Use **`remote/`** and **`receiver/`** for current Android support. Prebuilt APKs: [Releases](https://github.com/idkbro-jpg/Chronos/releases).
