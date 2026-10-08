@@ -25,15 +25,28 @@ class Prefs(context: Context) {
         get() = prefs.getInt(KEY_TIMEOUT, 30)
         set(value) = prefs.edit().putInt(KEY_TIMEOUT, value.coerceIn(5, 120)).apply()
 
+    /** Must match discord.command_prefix on the host (default "!"). */
+    var commandPrefix: String
+        get() {
+            val raw = prefs.getString(KEY_PREFIX, "!") ?: "!"
+            return raw.ifBlank { "!" }
+        }
+        set(value) {
+            val p = value.trim().ifBlank { "!" }
+            prefs.edit().putString(KEY_PREFIX, p).apply()
+        }
+
     fun isConfigured(): Boolean =
         botToken.isNotBlank() && channelId.isNotBlank() && laptopIp.isNotBlank()
 
     fun channelFor(command: String): String {
         val c = command.trim().lowercase()
+        val p = commandPrefix.lowercase()
         val backend = backendChannelId
         if (backend.isNotBlank() && (
-                c.startsWith("!lock") || c.startsWith("?status") || c.startsWith("?ping") ||
-                c == "!lock" || c == "?status" || c == "?ping"
+                c.startsWith("${p}lock") ||
+                c.startsWith("?status") ||
+                c.startsWith("?ping")
             )
         ) {
             return backend
@@ -47,5 +60,6 @@ class Prefs(context: Context) {
         private const val KEY_BACKEND = "backend_channel_id"
         private const val KEY_LAPTOP_IP = "laptop_ip"
         private const val KEY_TIMEOUT = "timeout_sec"
+        private const val KEY_PREFIX = "command_prefix"
     }
 }

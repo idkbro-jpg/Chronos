@@ -17,20 +17,30 @@ class Prefs(context: Context) {
         get() = prefs.getString(KEY_BACKEND, "") ?: ""
         set(value) = prefs.edit().putString(KEY_BACKEND, value.trim()).apply()
 
+    /** Must match discord.command_prefix on the host (default "!"). */
+    var commandPrefix: String
+        get() {
+            val raw = prefs.getString(KEY_PREFIX, "!") ?: "!"
+            return raw.ifBlank { "!" }
+        }
+        set(value) {
+            val p = value.trim().ifBlank { "!" }
+            prefs.edit().putString(KEY_PREFIX, p).apply()
+        }
+
     fun isConfigured(): Boolean =
         botToken.isNotBlank() && channelId.isNotBlank()
 
     fun channelFor(command: String): String {
         val c = command.trim().lowercase()
+        val p = commandPrefix.lowercase()
         val backend = backendChannelId
         if (backend.isNotBlank() && (
-                c.startsWith("!lock") ||
-                c.startsWith("!sudomode") ||
-                c.startsWith("!sudo") ||
+                c.startsWith("${p}lock") ||
+                c.startsWith("${p}sudomode") ||
+                c.startsWith("${p}sudo") ||
                 c.startsWith("?status") ||
-                c.startsWith("?ping") ||
-                c == "!lock" || c == "!sudomode" || c == "!sudo" ||
-                c == "?status" || c == "?ping"
+                c.startsWith("?ping")
             )
         ) {
             return backend
@@ -42,5 +52,6 @@ class Prefs(context: Context) {
         private const val KEY_TOKEN = "bot_token"
         private const val KEY_CHANNEL = "channel_id"
         private const val KEY_BACKEND = "backend_channel_id"
+        private const val KEY_PREFIX = "command_prefix"
     }
 }
