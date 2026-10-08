@@ -1,20 +1,23 @@
 """
-Chronos Daemon – watches Discord, approves, executes.
+Chronos Daemon – temporarily broken on this branch due to upload limits.
 
-One gateway connection. Prefer running only this process (not bot/ + daemon
-with the same token at once).
+RESTORE (run from repo root on this branch):
 
-NOTE: Source is split across _main_part_*.txt for transport; assembled at import.
+  curl -sL https://raw.githubusercontent.com/idkbro-jpg/Chronos/main/daemon/main.py -o daemon/main.py
+  python3 scripts/apply_prefix_fix.py
+  git add daemon/main.py
+  git commit -m "fix: restore main.py with command_prefix() in !perm strings"
+
+Then delete the leftover part files if present:
+
+  git rm -f daemon/_main_part_*.txt 2>/dev/null || true
+
+After that, restart the daemon as usual.
 """
-from pathlib import Path
 
-_dir = Path(__file__).resolve().parent
-_parts = sorted(_dir.glob("_main_part_*.txt"))
-if not _parts:
-    raise RuntimeError(
-        "daemon/_main_part_*.txt missing. Restore with:\n"
-        "  curl -sL https://raw.githubusercontent.com/idkbro-jpg/Chronos/main/daemon/main.py -o daemon/main.py\n"
-        "  python3 scripts/apply_prefix_fix.py"
-    )
-_code = "".join(p.read_text(encoding="utf-8") for p in _parts)
-exec(compile(_code, str(_dir / "main.py"), "exec"), globals())
+raise SystemExit(
+    "daemon/main.py is not restored yet.\n"
+    "Run:\n"
+    "  curl -sL https://raw.githubusercontent.com/idkbro-jpg/Chronos/main/daemon/main.py -o daemon/main.py\n"
+    "  python3 scripts/apply_prefix_fix.py\n"
+)
