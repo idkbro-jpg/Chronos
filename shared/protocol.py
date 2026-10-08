@@ -74,7 +74,7 @@ def parse_command(content: str) -> str | None:
         return f"{BUILTINS_WITH_ARGS[first]}:{rest}"
 
     if first in BUILTINS:
-        # For !perm we keep the rest so the handler can parse subcommands
+        # For perm we keep the rest so the handler can parse subcommands
         if first in ("perm", "permission", "permissions"):
             return f"__PERM__:{rest}" if rest else "__PERM__"
         return BUILTINS[first]
@@ -93,6 +93,7 @@ def parse_command(content: str) -> str | None:
 
 def format_alias_list() -> str:
     aliases = list_aliases()
+    p = command_prefix()
     lines = ["**Available aliases:**", "```"]
     if aliases:
         for name, cmd in sorted(aliases.items()):
@@ -102,8 +103,8 @@ def format_alias_list() -> str:
         lines.append("(none)")
     lines.append("```")
     lines.append(
-        "_Built-ins: `!help` `!ping` `!aliases` `!reload` `!lock` `!unlock` `!sudomode` "
-        "`!status` `!screenshot` `!exportlog` `!input` `!mouse` `!history` `!last` `!luksunlock` `!perm`_"
+        f"_Built-ins: `{p}help` `{p}ping` `{p}aliases` `{p}reload` `{p}lock` `{p}unlock` `{p}sudomode` "
+        f"`{p}status` `{p}screenshot` `{p}exportlog` `{p}input` `{p}mouse` `{p}history` `{p}last` `{p}luksunlock` `{p}perm`_"
     )
     return "\n".join(lines)
 
