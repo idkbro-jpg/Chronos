@@ -5,16 +5,19 @@
 # Only Chronos-specific permissions live here.
 # Discord already handles ban / kick / manage channels etc.
 #
-# After changes: !perm reload   or   !reload
+# After changes: reload with your command_prefix (default !) e.g. !perm reload or !reload
 #
 # Permission names are either:
 #   - special ones listed below (sudo, manage_permissions, …)
 #   - any command / alias name (e.g. aegis, screenshot, uptime, cmd, …)
+#
+# Note: "sudo" (bypass all permission checks) is different from the "sudomode"
+# command (temporary no-approval mode unlocked via DM password).
 
 special_permissions:
   sudo: "Bypass every permission check (dangerous)"
-  manage_permissions: "Use !perm and edit this config / user overrides"
-  manage_bot: "Restart, shutdown, change prefix, etc."
+  manage_permissions: "Use perm commands and edit this config / user overrides"
+  manage_bot: "Reserved for bot management; !reload is gated by this permission"
   lock: "Lock the machine"
   unlock: "Unlock the machine (DM password still required)"
   sudomode: "Enable / view sudomode"
