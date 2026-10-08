@@ -80,7 +80,7 @@ fun ChronosSendApp() {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Notfall-Buttons",
+                    text = "Emergency buttons",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -102,7 +102,7 @@ fun ChronosSendApp() {
 
                 EmergencyButton(
                     title = "Lock",
-                    subtitle = "!lock  (braucht ✅)",
+                    subtitle = "!lock  (needs ✅)",
                     icon = Icons.Default.Lock,
                     enabled = !isSending,
                     containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -119,7 +119,7 @@ fun ChronosSendApp() {
 
                 EmergencyButton(
                     title = "Screenshot",
-                    subtitle = "!screenshot  (braucht ✅)",
+                    subtitle = "!screenshot  (needs ✅)",
                     icon = Icons.Default.Screenshot,
                     enabled = !isSending,
                     onClick = {
@@ -134,7 +134,7 @@ fun ChronosSendApp() {
 
                 if (isSending) {
                     CircularProgressIndicator(modifier = Modifier.padding(top = 16.dp))
-                    Text("Sende Command…")
+                    Text("Sending command…")
                 }
 
                 lastResult?.let { msg ->
@@ -160,7 +160,7 @@ fun ChronosSendApp() {
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
-                    text = "Beta 0.1.0 – Send Mode only",
+                    text = "Beta 0.1.0 – Send mode only (prefer remote/ app)",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
@@ -227,8 +227,8 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             Text(
-                "Discord Bot Token + Channel-ID eintragen.\n" +
-                        "Das ist derselbe Token, den der Daemon auch benutzt (oder ein separater Bot).",
+                "Enter Discord bot token + command channel ID.\n" +
+                        "Same token the daemon uses (or a separate bot).",
                 style = MaterialTheme.typography.bodyMedium
             )
 
@@ -251,19 +251,19 @@ fun SettingsScreen(
             Button(
                 onClick = {
                     if (token.isBlank() || channel.isBlank()) {
-                        Toast.makeText(context, "Beide Felder ausfüllen", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Fill in both fields", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
                     prefs.botToken = token
                     prefs.channelId = channel
-                    Toast.makeText(context, "Gespeichert", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
                     onSave()
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
             ) {
-                Text("Speichern")
+                Text("Save")
             }
         }
     }
@@ -281,8 +281,8 @@ private suspend fun sendCommand(
     onUpdate(
         false,
         result.fold(
-            onSuccess = { "OK – `$command` gesendet" },
-            onFailure = { "Fehler: ${it.message}" }
+            onSuccess = { "OK – `$command` sent" },
+            onFailure = { "Error: ${it.message}" }
         )
     )
 }
