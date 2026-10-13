@@ -25,6 +25,8 @@ BUILTINS = {
     "sudo": "__SUDOMODE__",
     "alarm": "__ALARM_STATUS__",
     "status": "__STATUS__",
+    "sysinfo": "__SYSINFO__",
+    "sys": "__SYSINFO__",
     "ping": "__PING__",
     "screenshot": "__SCREENSHOT__",
     "ss": "__SCREENSHOT__",
@@ -103,7 +105,7 @@ def format_alias_list() -> str:
     lines.append("```")
     lines.append(
         "_Built-ins: `!help` `!ping` `!aliases` `!reload` `!lock` `!unlock` `!sudomode` "
-        "`!status` `!screenshot` `!exportlog` `!input` `!mouse` `!history` `!last` `!luksunlock` `!perm`_"
+        "`!status` `!sysinfo` `!screenshot` `!exportlog` `!input` `!mouse` `!history` `!last` `!luksunlock` `!perm`_"
     )
     return "\n".join(lines)
 
@@ -116,9 +118,10 @@ def format_help() -> str:
         f"{p}help / {p}commands     this message\n"
         f"{p}ping                 latency / liveness check\n"
         f"{p}status               lock / alarm / sudomode / whitelist / luks\n"
+        f"{p}sysinfo / {p}sys       host temp mem disk load IPs + last log lines\n"
         f"{p}aliases              list command shortcuts\n"
         f"{p}reload               reload config.yml + aliases.yml + permissions.yml\n"
-        f"{p}lock                 lock the machine (needs ✅ unless sudomode)\n"
+        f"{p}lock                 lock the machine (needs \u2705 unless sudomode)\n"
         f"{p}unlock               how to unlock (DM only)\n"
         f"{p}sudomode             status; enable via DM with lock password\n"
         f"{p}alarm                alarm status\n"
@@ -126,15 +129,15 @@ def format_help() -> str:
         f"{p}exportlog / {p}logs    upload recent logs\n"
         f"{p}history / {p}hist      recent executed commands\n"
         f"{p}last                 show last executed command\n"
-        f"{p}input <keys|text:…>  simulate keyboard\n"
+        f"{p}input <keys|text:\u2026>  simulate keyboard\n"
         f"{p}mouse <spec>         simulate mouse\n"
         f"{p}luksunlock           unlock configured LUKS volume\n"
-        f"{p}perm …               permission management (see {p}perm help)\n"
+        f"{p}perm \u2026               permission management (see {p}perm help)\n"
         f"{p}<alias>              run an alias from aliases.yml\n"
         f"{p}cmd <shell>          run a raw shell command\n"
         f"{p}<any shell command>  same as cmd (after approval)\n"
         f"```\n"
-        f"_Most powerful actions need ✅ unless **sudomode** is on._\n"
+        f"_Most powerful actions need \u2705 unless **sudomode** is on._\n"
         f"_Unlock / sudomode password: only in a **DM** to the bot._\n"
         f"_Logs: `journalctl --user -u chronos-daemon -f` and `logs/chronos-*.log`._"
     )
