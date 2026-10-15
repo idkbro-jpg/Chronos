@@ -26,27 +26,30 @@ from shared.config import ROOT
 
 PERMISSIONS_FILE = ROOT / "permissions.yml"
 
-# Absolute last-resort ID if even the YAML super_owner_id cannot be read.
-# Override via env CHRONOS_SUPER_OWNER_ID if you want.
-_FALLBACK_SUPER_OWNER = os.environ.get("CHRONOS_SUPER_OWNER_ID", "1528851082288169061")
+# Last-resort super-owner if YAML is unreadable.
+# Prefer setting this via env (never hardcode real IDs in a public repo):
+#   export CHRONOS_SUPER_OWNER_ID=123456789012345678
+# If unset and YAML is broken, Safe-Mode has no privileged user.
+_FALLBACK_SUPER_OWNER = (os.environ.get("CHRONOS_SUPER_OWNER_ID") or "").strip()
 
 
 def _empty_safe() -> dict[str, Any]:
     """Minimal config used in Safe-Mode."""
+    users: dict[str, Any] = {}
+    if _FALLBACK_SUPER_OWNER:
+        users[_FALLBACK_SUPER_OWNER] = {
+            "rank": "owner",
+            "needs_approval": False,
+        }
     return {
-        "super_owner_id": str(_FALLBACK_SUPER_OWNER),
+        "super_owner_id": _FALLBACK_SUPER_OWNER,
         "presets": {
             "owner": {
                 "needs_approval": False,
                 "permissions": ["chronos:*", "alias:*", "bash:*"],
             }
         },
-        "users": {
-            str(_FALLBACK_SUPER_OWNER): {
-                "rank": "owner",
-                "needs_approval": False,
-            }
-        },
+        "users": users,
         "_safe_mode": True,
     }
 
@@ -71,7 +74,7 @@ def _load_raw() -> dict[str, Any]:
         presets = data.get("presets") if isinstance(data.get("presets"), dict) else {}
         users = data.get("users") if isinstance(data.get("users"), dict) else {}
 
-        if super_id not in users:
+        if super_id and super_id not in users:
             users[super_id] = {"rank": "owner", "needs_approval": False}
 
         if "owner" not in presets:
@@ -117,7 +120,8 @@ def _resolve_permissions(user_id: int | str) -> set[str]:
     cfg = _load_raw()
     uid = str(user_id)
 
-    if uid == str(cfg.get("super_owner_id")):
+    so = str(cfg.get("super_owner_id") or "").strip()
+    if so and uid == so:
         return {"chronos:*", "alias:*", "bash:*"}
 
     entry = (cfg.get("users") or {}).get(uid)
@@ -190,7 +194,8 @@ def needs_approval(user_id: int | str) -> bool:
     cfg = _load_raw()
     uid = str(user_id)
 
-    if uid == str(cfg.get("super_owner_id")):
+    so = str(cfg.get("super_owner_id") or "").strip()
+    if so and uid == so:
         return False
 
     entry = (cfg.get("users") or {}).get(uid)
@@ -213,7 +218,8 @@ def can_write_permissions(user_id: int | str) -> bool:
     cfg = _load_raw()
     uid = str(user_id)
 
-    if uid == str(cfg.get("super_owner_id")):
+    so = str(cfg.get("super_owner_id") or "").strip()
+    if so and uid == so:
         return True
 
     entry = (cfg.get("users") or {}).get(uid)
