@@ -49,12 +49,16 @@ from shared.config import (
 )
 from shared.discord_utils import fit_discord_message, format_exec_replies, safe_inline
 from shared.permissions import (
-    get_user_effective_permissions,
+    can_write_permissions,
+    get_effective_permissions,
+    give_permission,
     has_permission,
-    list_ranks,
-    list_special_permissions,
-    load_permissions,
-    save_permissions,
+    is_safe_mode,
+    list_presets,
+    list_users,
+    needs_approval as user_needs_approval,
+    set_rank,
+    super_owner_id,
 )
 from shared.protocol import format_alias_list, format_help, parse_command
 
@@ -114,8 +118,8 @@ async def _maybe_audit(text: str) -> None:
         pass
 
 
-def _needs_approval(cmd_token: str) -> bool:
-    """Built-ins that are informational never need approval."""
+def _cmd_skips_approval_token(cmd_token: str) -> bool:
+    """Built-ins that are informational never need the approval flow."""
     no_approval = {
         "__HELP__",
         "__PING__",
@@ -129,46 +133,60 @@ def _needs_approval(cmd_token: str) -> bool:
         "__UNLOCK__",  # just prints how-to
     }
     if cmd_token in no_approval or cmd_token.startswith("__PERM__"):
-        return False
+        return True
     if is_sudomode():
-        return False
-    return True
+        return True
+    return False
 
 
 def _perm_for_token(cmd_token: str, raw_body: str) -> str | None:
     """
-    Map a parsed command token to the Chronos permission name that guards it.
+    Map a parsed command token to a namespaced Chronos permission.
     Returns None when the command is unrestricted (help/ping/status etc.).
     """
     mapping = {
-        "__LOCK__": "lock",
-        "__UNLOCK__": "unlock",
-        "__SUDOMODE__": "sudomode",
-        "__SCREENSHOT__": "screenshot",
-        "__INPUT__": "input",
-        "__MOUSE__": "mouse",
-        "__LUKS_UNLOCK__": "luksunlock",
-        "__EXPORT_LOG__": "exportlog",
-        "__HISTORY__": "history",
-        "__LAST__": "history",
-        "__RELOAD__": "manage_bot",
-        "__PERM__": "manage_permissions",
+        "__LOCK__": "chronos:lock",
+        "__UNLOCK__": "chronos:unlock",
+        "__SUDOMODE__": "chronos:sudomode",
+        "__SCREENSHOT__": "chronos:screenshot",
+        "__INPUT__": "chronos:input",
+        "__MOUSE__": "chronos:mouse",
+        "__LUKS_UNLOCK__": "chronos:luksunlock",
+        "__EXPORT_LOG__": "chronos:exportlog",
+        "__HISTORY__": "chronos:history",
+        "__LAST__": "chronos:history",
+        "__RELOAD__": "chronos:reload",
+        "__PERM__": "chronos:manage_permissions",
+        "__SYSINFO__": "chronos:sysinfo",
     }
+    # Informational builtins that anyone may use (still gated by whitelist)
+    open_tokens = {
+        "__HELP__",
+        "__PING__",
+        "__STATUS__",
+        "__LIST_ALIASES__",
+        "__ALARM_STATUS__",
+        "__UNLOCK__",
+    }
+    if cmd_token in open_tokens:
+        return None
     if cmd_token in mapping:
         return mapping[cmd_token]
     if cmd_token.startswith("__INPUT__"):
-        return "input"
+        return "chronos:input"
     if cmd_token.startswith("__MOUSE__"):
-        return "mouse"
+        return "chronos:mouse"
     if cmd_token.startswith("__PERM__"):
-        return "manage_permissions"
+        return "chronos:manage_permissions"
 
-    # Shell / alias / raw command → permission is the first word (alias name)
-    # or "cmd" for explicit !cmd / free-form shell.
+    # Shell / alias / raw command → bash:<first-word>
     first = (raw_body or cmd_token).split(None, 1)[0].lower() if (raw_body or cmd_token) else ""
+    # strip simple path prefixes so /usr/bin/ls → ls for matching bash:ls
+    if "/" in first:
+        first = first.rsplit("/", 1)[-1]
     if first:
-        return first
-    return "cmd"
+        return f"bash:{first}"
+    return "bash:*"
 
 
 # ---------------------------------------------------------------------------
@@ -178,171 +196,191 @@ def _perm_for_token(cmd_token: str, raw_body: str) -> str | None:
 
 async def _handle_perm(message: discord.Message, rest: str) -> None:
     """
-    !perm check @user
-    !perm give @user permission <name>
-    !perm give @user rank <rankname>
-    !perm remove @user permission <name>
-    !perm remove @user rank <rankname>
+    !perm check <id|@user>
+    !perm give <id|@user> permission <namespaced>
+    !perm give <id|@user> rank <rankname>
+    !perm deny <id|@user> permission <namespaced>
+    !perm setrank <id|@user> <rankname>
     !perm list
-    !perm reload
     !perm help
-    """
-    member = message.author
-    if not isinstance(member, discord.Member):
-        # DM – try to resolve guild member from the command channel's guild
-        guild = None
-        ch = client.get_channel(COMMAND_CHANNEL_ID)
-        if ch and getattr(ch, "guild", None):
-            guild = ch.guild
-        if guild:
-            member = guild.get_member(message.author.id) or member
 
-    if not has_permission(member, "manage_permissions") and not has_permission(member, "sudo"):
-        await _safe_reply(message, "You need the `manage_permissions` permission to use `!perm`.")
-        return
+    Only super_owner_id and rank owner may change permissions.
+    File is always re-read; writes go through shared.permissions helpers.
+    """
+    uid = message.author.id
+
+    if not can_write_permissions(uid) and not (
+        rest or ""
+    ).strip().lower().startswith(("check", "list", "help", "?")):
+        # read-only subcommands allowed for anyone with manage_permissions
+        if not has_permission(uid, "chronos:manage_permissions"):
+            await _safe_reply(
+                message,
+                "You need rank `owner` (or be super-owner) to change permissions.\n"
+                "Anyone with `chronos:manage_permissions` may use `check` / `list`.",
+            )
+            return
 
     parts = (rest or "").strip().split()
     if not parts or parts[0].lower() in ("help", "?"):
-        p = "!"  # display only
+        p = "!"
         await _safe_reply(
             message,
-            f"**!perm usage**\n"
+            f"**!perm usage** (namespaced)\n"
             f"```\n"
-            f"{p}perm check @user\n"
-            f"{p}perm give @user permission <name>\n"
-            f"{p}perm give @user rank <rankname>\n"
-            f"{p}perm remove @user permission <name>\n"
-            f"{p}perm remove @user rank <rankname>\n"
+            f"{p}perm check <id|@user>\n"
             f"{p}perm list\n"
-            f"{p}perm reload\n"
+            f"{p}perm give <id|@user> permission chronos:screenshot\n"
+            f"{p}perm give <id|@user> permission bash:ls\n"
+            f"{p}perm give <id|@user> rank mod\n"
+            f"{p}perm setrank <id|@user> owner\n"
+            f"{p}perm deny <id|@user> permission chronos:lock\n"
             f"```\n"
-            f"Permission names = special ones (`sudo`, `screenshot`, …) or any alias/command name.",
+            f"Namespaces: `chronos:…` · `bash:…` · `alias:…` · wildcards `chronos:*` `bash:*`\n"
+            f"Safe-mode: **{'yes' if is_safe_mode() else 'no'}** · super-owner: `{super_owner_id()}`",
         )
         return
 
     sub = parts[0].lower()
 
-    if sub == "reload":
-        load_permissions(force=True)
-        await _safe_reply(message, "Permissions reloaded from `permissions.yml`.")
-        return
-
     if sub == "list":
-        ranks = list_ranks()
-        specials = list_special_permissions()
-        lines = ["**Chronos ranks**"]
-        for name, r in sorted(ranks.items(), key=lambda x: x[1].get("level", 0)):
+        presets = list_presets()
+        users = list_users()
+        lines = ["**Presets**"]
+        for name, r in sorted(presets.items()):
             perms = ", ".join(r.get("permissions") or []) or "(none)"
-            lines.append(f"• **{name}** (level {r.get('level', 0)}): `{perms}`")
-        lines.append("\n**Special permissions**")
-        for name, desc in sorted(specials.items()):
-            lines.append(f"• `{name}` — {desc}")
+            na = r.get("needs_approval", True)
+            lines.append(f"• **{name}** (approval={'yes' if na else 'no'}): `{perms}`")
+        lines.append(f"\n**Users** ({len(users)})")
+        for uid_s, entry in sorted(users.items()):
+            rank = entry.get("rank", "—")
+            extra = entry.get("extra") or []
+            deny = entry.get("deny") or []
+            bits = [f"rank={rank}"]
+            if extra:
+                bits.append("extra=" + ",".join(str(x) for x in extra[:8]))
+            if deny:
+                bits.append("deny=" + ",".join(str(x) for x in deny[:8]))
+            lines.append(f"• `{uid_s}`: " + " · ".join(bits))
+        if is_safe_mode():
+            lines.append("\n⚠️ **Safe-Mode active** — only super-owner has rights.")
         await _safe_reply(message, "\n".join(lines))
         return
 
     if sub == "check":
         target = _resolve_member(message, parts[1:])
-        if target is None:
-            await _safe_reply(message, "Usage: `!perm check @user`")
+        target_id = None
+        if target is not None:
+            target_id = target.id
+            label = target.display_name
+        else:
+            # raw id
+            for tok in parts[1:]:
+                t = tok.strip("<@!>")
+                if t.isdigit():
+                    target_id = int(t)
+                    label = t
+                    break
+        if target_id is None:
+            await _safe_reply(message, "Usage: `!perm check @user` or `!perm check <id>`")
             return
-        perms = sorted(get_user_effective_permissions(target))
+        perms = sorted(get_effective_permissions(target_id))
+        na = user_needs_approval(target_id)
         if not perms:
-            await _safe_reply(message, f"**{target.display_name}** has no Chronos permissions.")
+            await _safe_reply(
+                message,
+                f"**{label}** (`{target_id}`) has **no** Chronos permissions.\n"
+                f"needs_approval: **{na}**",
+            )
             return
-        shown = ", ".join(f"`{p}`" for p in perms[:40])
-        extra = f" (+{len(perms) - 40} more)" if len(perms) > 40 else ""
+        shown = ", ".join(f"`{p}`" for p in perms[:50])
+        extra = f" (+{len(perms) - 50} more)" if len(perms) > 50 else ""
         await _safe_reply(
             message,
-            f"**{target.display_name}** effective permissions:\n{shown}{extra}",
+            f"**{label}** (`{target_id}`) effective permissions:\n{shown}{extra}\n"
+            f"needs_approval: **{na}**",
         )
         return
 
-    if sub in ("give", "remove", "add", "revoke"):
-        if len(parts) < 4:
+    # ---- mutating subcommands ----
+    if not can_write_permissions(uid):
+        await _safe_reply(message, "Only super-owner / rank `owner` may change permissions.")
+        return
+
+    if sub in ("give", "add", "setrank", "deny", "remove", "revoke"):
+        if len(parts) < 3:
             await _safe_reply(
                 message,
-                f"Usage: `!perm {sub} @user permission|rank <name>`",
+                f"Usage: `!perm {sub} <id|@user> …`",
             )
             return
+
         target = _resolve_member(message, parts[1:])
-        if target is None:
-            await _safe_reply(message, "Could not resolve the target user. Mention them or use their ID.")
+        target_id = target.id if target else None
+        label = target.display_name if target else None
+        if target_id is None:
+            for tok in parts[1:]:
+                t = tok.strip("<@!>")
+                if t.isdigit():
+                    target_id = int(t)
+                    label = t
+                    break
+        if target_id is None:
+            await _safe_reply(message, "Could not resolve target user (mention or numeric ID).")
             return
 
-        # Find the type token (permission / rank) after the mention/id
-        type_idx = None
-        for i, tok in enumerate(parts[1:], start=1):
-            if tok.lower() in ("permission", "perm", "rank", "role"):
-                type_idx = i
-                break
-        if type_idx is None or type_idx + 1 >= len(parts):
-            await _safe_reply(
-                message,
-                f"Usage: `!perm {sub} @user permission|rank <name>`",
-            )
-            return
-
-        kind = parts[type_idx].lower()
-        name = parts[type_idx + 1].lower().strip()
-        adding = sub in ("give", "add")
-
-        cfg = load_permissions()
-        overrides = cfg.setdefault("user_overrides", {})
-        entry = overrides.setdefault(str(target.id), {})
-
-        if kind in ("permission", "perm"):
-            if adding:
-                lst = entry.setdefault("extra_permissions", [])
-                denied = entry.get("denied_permissions") or []
-                if name in [str(x).lower() for x in denied]:
-                    entry["denied_permissions"] = [x for x in denied if str(x).lower() != name]
-                if name not in [str(x).lower() for x in lst]:
-                    lst.append(name)
-                action = f"granted permission `{name}`"
+        if sub == "setrank" or (sub in ("give", "add") and len(parts) >= 3 and parts[2].lower() == "rank"):
+            # !perm setrank <id> <rank>  OR  !perm give <id> rank <rank>
+            if sub == "setrank":
+                rank = parts[2].lower()
             else:
-                extras = entry.get("extra_permissions") or []
-                new_extras = [x for x in extras if str(x).lower() != name]
-                if len(new_extras) != len(extras):
-                    entry["extra_permissions"] = new_extras
-                    action = f"removed extra permission `{name}`"
-                else:
-                    denied = entry.setdefault("denied_permissions", [])
-                    if name not in [str(x).lower() for x in denied]:
-                        denied.append(name)
-                    action = f"denied permission `{name}`"
-        else:  # rank
-            ranks = cfg.get("ranks") or {}
-            if name not in ranks:
+                if len(parts) < 4:
+                    await _safe_reply(message, "Usage: `!perm give <id> rank <rankname>`")
+                    return
+                rank = parts[3].lower()
+            ok, msg = set_rank(target_id, rank, writer_id=uid)
+            if ok:
+                await _safe_reply(message, f"Set rank **{rank}** for **{label}** (`{target_id}`).")
+                log_event("perm_change", user_id=uid, user_name=str(message.author),
+                          detail=f"setrank {rank} → {target_id}")
+            else:
+                await _safe_reply(message, f"Failed: {msg}")
+            return
+
+        if sub in ("give", "add"):
+            # !perm give <id> permission <name>
+            type_idx = None
+            for i, tok in enumerate(parts[1:], start=1):
+                if tok.lower() in ("permission", "perm"):
+                    type_idx = i
+                    break
+            if type_idx is None or type_idx + 1 >= len(parts):
                 await _safe_reply(
                     message,
-                    f"Unknown rank `{name}`. Known: {', '.join(sorted(ranks)) or '(none)'}",
+                    "Usage: `!perm give <id> permission chronos:screenshot` "
+                    "or `!perm give <id> rank mod`",
                 )
                 return
-            lst = entry.setdefault("extra_ranks", [])
-            if adding:
-                if name not in [str(x).lower() for x in lst]:
-                    lst.append(name)
-                action = f"granted rank `{name}`"
+            name = parts[type_idx + 1].strip()
+            # auto-namespace bare names to chronos:
+            if ":" not in name:
+                name = f"chronos:{name}"
+            ok, msg = give_permission(target_id, name, writer_id=uid)
+            if ok:
+                await _safe_reply(message, f"Granted `{name}` to **{label}** (`{target_id}`).")
+                log_event("perm_change", user_id=uid, user_name=str(message.author),
+                          detail=f"give {name} → {target_id}")
             else:
-                entry["extra_ranks"] = [x for x in lst if str(x).lower() != name]
-                action = f"removed rank `{name}`"
+                await _safe_reply(message, f"Failed: {msg}")
+            return
 
-        # Clean empty lists
-        for k in list(entry.keys()):
-            if isinstance(entry[k], list) and not entry[k]:
-                del entry[k]
-        if not entry:
-            overrides.pop(str(target.id), None)
-
-        save_permissions(cfg)
-        await _safe_reply(message, f"{action} for **{target.display_name}**.")
-        log_event(
-            "perm_change",
-            user_id=message.author.id,
-            user_name=str(message.author),
-            detail=f"{action} → {target.id}",
-        )
-        return
+        if sub in ("deny", "remove", "revoke"):
+            await _safe_reply(
+                message,
+                "To deny a permission, edit `permissions.yml` under the user's `deny:` list "
+                "(or remove from `extra:`). Live deny-write will be added later if needed.",
+            )
+            return
 
     await _safe_reply(message, f"Unknown subcommand `{sub}`. Try `!perm help`.")
 
@@ -478,8 +516,11 @@ async def _handle_builtin(message: discord.Message, token: str) -> bool:
     if token == "__RELOAD__":
         load_config(force=True)
         load_aliases(force=True)
-        load_permissions(force=True)
-        await _safe_reply(message, "Reloaded `config.yml`, `aliases.yml`, and `permissions.yml`.")
+        await _safe_reply(
+            message,
+            "Reloaded `config.yml` and `aliases.yml`. "
+            "`permissions.yml` is always re-read on each check.",
+        )
         log_event("reload", user_id=uid, user_name=uname)
         return True
 
@@ -572,7 +613,7 @@ async def _execute_shell(message: discord.Message, command: str) -> None:
         log_event("denied_policy", user_id=uid, user_name=uname, detail=command)
         return
 
-    if _needs_approval(command):
+    if not _cmd_skips_approval_token(command) and user_needs_approval(message.author.id):
         approved = await request_approval(message, command, client)
         if not approved:
             log_event("denied_approval", user_id=uid, user_name=uname, detail=command)
@@ -652,31 +693,17 @@ async def _dispatch_command(message: discord.Message, token: str, raw_body: str)
     uid = message.author.id
     uname = str(message.author)
 
-    # Resolve Member for permission checks
-    member = message.author
-    if not isinstance(member, discord.Member) and message.guild:
-        member = message.guild.get_member(uid) or member
-
-    # Permission gate (Chronos-specific)
+    # Permission gate (namespaced, always re-reads permissions.yml)
     needed = _perm_for_token(token, raw_body)
-    if needed and not has_permission(member, needed):
-        # Allow pure informational builtins even without a rank
-        if token not in (
-            "__HELP__",
-            "__PING__",
-            "__STATUS__",
-            "__SYSINFO__",
-            "__LIST_ALIASES__",
-            "__ALARM_STATUS__",
-            "__UNLOCK__",
-        ):
-            await _safe_reply(
-                message,
-                f"No permission for `{needed}`. "
-                f"(Ask an owner to map your Discord role in `permissions.yml` or `!perm give`.)",
-            )
-            log_event("denied", user_id=uid, user_name=uname, detail=f"missing perm={needed}")
-            return
+    if needed and not has_permission(uid, needed):
+        await _safe_reply(
+            message,
+            f"No permission for `{needed}`.\n"
+            f"Ask an owner: `!perm give {uid} permission {needed}` "
+            f"or set a rank in `permissions.yml`.",
+        )
+        log_event("denied", user_id=uid, user_name=uname, detail=f"missing perm={needed}")
+        return
 
     # Builtins first
     if token.startswith("__") and await _handle_builtin(message, token):
@@ -717,7 +744,11 @@ async def on_ready():
     print(f"[Daemon] Watching channel ID: {COMMAND_CHANNEL_ID}")
     load_config()
     load_aliases()
-    load_permissions()
+    if is_safe_mode():
+        print(
+            f"[Daemon] ⚠️  permissions Safe-Mode active "
+            f"(only super-owner {super_owner_id()} has rights)."
+        )
     if not whitelist_enabled():
         print(
             "[Daemon] ⚠️  SECURITY WARNING: whitelist is OFF. "
