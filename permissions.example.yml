@@ -14,11 +14,11 @@
 # !perm commands (when wired in main.py) also write this file.
 
 # ---------------------------------------------------------------------------
-# Hardcoded super-owner (fallback when YAML is broken or missing)
+# Super-owner (fallback when YAML is broken or missing)
 # This ID always has full rights and can always write the file.
-# Put YOUR Discord user ID here.
+# Put YOUR Discord user ID here (never commit real IDs to a public repo).
 # ---------------------------------------------------------------------------
-super_owner_id: "1528851082288169061"
+super_owner_id: "YOUR_DISCORD_USER_ID"
 
 # ---------------------------------------------------------------------------
 # Presets (ranks)
@@ -83,7 +83,7 @@ presets:
 # needs_approval → overrides the rank's default (optional)
 # ---------------------------------------------------------------------------
 users:
-  "1528851082288169061":          # flown306 – full owner
+  "YOUR_DISCORD_USER_ID":          # full owner – replace with your real ID locally
     rank: owner
     needs_approval: false
 
