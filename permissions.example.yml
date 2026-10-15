@@ -1,77 +1,100 @@
-# Chronos permissions (TEMPLATE)
+# Chronos permissions (NEW DESIGN)
 # Copy to permissions.yml and edit:
 #   cp permissions.example.yml permissions.yml
 #
-# Only Chronos-specific permissions live here.
-# Discord already handles ban / kick / manage channels etc.
+# Rules of this system:
+#   - Everything is namespaced: chronos:…  bash:…  alias:…
+#   - Only Discord user IDs (never names)
+#   - File is re-read on every check (no stale RAM state)
+#   - No entry = no rights (multiple deny walls)
+#   - Broken YAML → Safe-Mode (only the hardcoded super-owner keeps rights)
+#   - Writing the file is only allowed for the super-owner ID + anyone with rank owner
 #
-# After changes: !perm reload   or   !reload
-#
-# Permission names are either:
-#   - special ones listed below (sudo, manage_permissions, …)
-#   - any command / alias name (e.g. aegis, screenshot, uptime, cmd, …)
+# After manual edits the next message already sees the change.
+# !perm commands (when wired in main.py) also write this file.
 
-special_permissions:
-  sudo: "Bypass every permission check (dangerous)"
-  manage_permissions: "Use !perm and edit this config / user overrides"
-  manage_bot: "Restart, shutdown, change prefix, etc."
-  lock: "Lock the machine"
-  unlock: "Unlock the machine (DM password still required)"
-  sudomode: "Enable / view sudomode"
-  screenshot: "Take screenshots"
-  input: "Keyboard simulation"
-  mouse: "Mouse simulation"
-  luksunlock: "Unlock configured LUKS volume"
-  exportlog: "Export / view logs"
-  history: "View command history"
+# ---------------------------------------------------------------------------
+# Hardcoded super-owner (fallback when YAML is broken or missing)
+# This ID always has full rights and can always write the file.
+# Put YOUR Discord user ID here.
+# ---------------------------------------------------------------------------
+super_owner_id: "1528851082288169061"
 
-# Discord Role → Chronos rank
-# Supports BOTH role name (string) and role ID (string of digits).
-# Highest matching rank wins; higher ranks inherit all lower ranks.
-role_map:
-  # Replace with your real Discord role names or IDs
-  "Owner": owner
-  # "123456789012345678": owner
-  "Admin": admin
-  "Moderator": mod
-  "Helper": helper
-
-ranks:
+# ---------------------------------------------------------------------------
+# Presets (ranks)
+# permissions = list of namespaced rights
+# needs_approval = whether this rank still needs ✅ for actions
+# ---------------------------------------------------------------------------
+presets:
   helper:
-    level: 30
+    needs_approval: true
     permissions:
-      - history
-      - screenshot
+      - chronos:history
+      - chronos:screenshot
+      - chronos:ping
+      - chronos:status
+      - chronos:help
 
   mod:
-    level: 50
+    needs_approval: true
     permissions:
-      - lock
-      - input
-      - mouse
-      - exportlog
-      # - aegis
-      # - uptime
+      - chronos:history
+      - chronos:screenshot
+      - chronos:lock
+      - chronos:input
+      - chronos:mouse
+      - chronos:exportlog
+      - chronos:ping
+      - chronos:status
+      - chronos:help
 
   admin:
-    level: 80
+    needs_approval: true
     permissions:
-      - manage_bot
-      - manage_permissions
-      - sudomode
-      - luksunlock
-      - unlock
+      - chronos:history
+      - chronos:screenshot
+      - chronos:lock
+      - chronos:unlock
+      - chronos:sudomode
+      - chronos:input
+      - chronos:mouse
+      - chronos:luksunlock
+      - chronos:exportlog
+      - chronos:manage_bot
+      - chronos:manage_permissions
+      - chronos:reload
+      - chronos:sysinfo
+      - chronos:ping
+      - chronos:status
+      - chronos:help
 
   owner:
-    level: 100
+    needs_approval: false
     permissions:
-      - "*"
+      - chronos:*          # all Chronos-built-in commands
+      - alias:*            # all aliases
+      - bash:*             # unrestricted shell
 
-# Optional per-user overrides (also filled by !perm give / remove)
-# user_overrides:
-#   "987654321098765432":
-#     extra_permissions:
-#       - aegis
-#     denied_permissions: []
-#     extra_ranks:
-#       - mod
+# ---------------------------------------------------------------------------
+# Users (only IDs)
+# rank          → takes the preset
+# extra         → additional permissions (can grant things the rank does not have)
+# deny          → remove permissions the rank would otherwise give
+# needs_approval → overrides the rank's default (optional)
+# ---------------------------------------------------------------------------
+users:
+  "1528851082288169061":          # flown306 – full owner
+    rank: owner
+    needs_approval: false
+
+  # Example of a more limited user:
+  # "123456789012345678":
+  #   rank: mod
+  #   extra:
+  #     - bash:ls
+  #     - bash:uptime
+  #     - bash:df*
+  #     - chronos:sysinfo
+  #   deny:
+  #     - chronos:lock          # even though mod has lock, this user cannot use it
+  #   needs_approval: true
