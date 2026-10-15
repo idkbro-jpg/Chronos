@@ -1,16 +1,23 @@
 """
-Chronos permission system.
+Chronos permission system (redesign).
 
-- Source of truth: permissions.yml
-- Discord roles → Chronos ranks (by name or ID)
-- Higher ranks inherit all lower ranks
-- Optional per-user overrides (extra / denied permissions + extra ranks)
-- Permission names = special names OR any command/alias name
+Design goals:
+- Everything namespaced: chronos:… / bash:… / alias:…
+- Only Discord user IDs
+- File is re-read on every check (no long-lived cache)
+- No entry = deny (multiple walls)
+- Broken / missing YAML → Safe-Mode (only super_owner_id keeps rights)
+- Writing only allowed for super_owner_id + anyone with rank owner
+- Rank + extra + deny model
+- needs_approval is a separate boolean
+
+Source of truth: permissions.yml  (see permissions.example.yml)
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+import os
+import time
 from typing import Any
 
 import yaml
@@ -19,176 +26,317 @@ from shared.config import ROOT
 
 PERMISSIONS_FILE = ROOT / "permissions.yml"
 
-_cfg: dict[str, Any] = {}
-_loaded = False
+# Absolute last-resort ID if even the YAML super_owner_id cannot be read.
+# Override via env CHRONOS_SUPER_OWNER_ID if you want.
+_FALLBACK_SUPER_OWNER = os.environ.get("CHRONOS_SUPER_OWNER_ID", "1528851082288169061")
 
 
-def _defaults() -> dict[str, Any]:
+def _empty_safe() -> dict[str, Any]:
+    """Minimal config used in Safe-Mode."""
     return {
-        "special_permissions": {
-            "sudo": "Bypass every permission check",
-            "manage_permissions": "Use !perm and edit permissions",
-            "manage_bot": "Restart / shutdown / change prefix etc.",
+        "super_owner_id": str(_FALLBACK_SUPER_OWNER),
+        "presets": {
+            "owner": {
+                "needs_approval": False,
+                "permissions": ["chronos:*", "alias:*", "bash:*"],
+            }
         },
-        "role_map": {},
-        "ranks": {
-            "owner": {"level": 100, "permissions": ["*"]},
+        "users": {
+            str(_FALLBACK_SUPER_OWNER): {
+                "rank": "owner",
+                "needs_approval": False,
+            }
         },
-        "user_overrides": {},
+        "_safe_mode": True,
     }
 
 
-def load_permissions(force: bool = False) -> dict[str, Any]:
-    global _cfg, _loaded
-    if _loaded and not force:
-        return _cfg
-
-    cfg = _defaults()
-    if PERMISSIONS_FILE.exists():
-        try:
-            with open(PERMISSIONS_FILE, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-            if isinstance(data, dict):
-                # shallow merge is enough for our structure
-                for key in ("special_permissions", "role_map", "ranks", "user_overrides"):
-                    if key in data and isinstance(data[key], dict):
-                        cfg[key] = data[key]
-            print(f"[Permissions] Loaded {PERMISSIONS_FILE}")
-        except Exception as e:
-            print(f"[Permissions] Failed to load permissions.yml: {e} – using defaults")
-    else:
-        print(f"[Permissions] No permissions.yml at {PERMISSIONS_FILE} – using defaults")
-
-    _cfg = cfg
-    _loaded = True
-    return _cfg
-
-
-def save_permissions(cfg: dict[str, Any] | None = None) -> None:
-    """Write current (or provided) config back to permissions.yml."""
-    global _cfg, _loaded
-    data = cfg if cfg is not None else _cfg
-    if not data:
-        data = load_permissions()
-
-    # Keep a clean order for humans
-    ordered = {
-        "special_permissions": data.get("special_permissions") or {},
-        "role_map": data.get("role_map") or {},
-        "ranks": data.get("ranks") or {},
-        "user_overrides": data.get("user_overrides") or {},
-    }
-
-    tmp = PERMISSIONS_FILE.with_suffix(".yml.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        yaml.safe_dump(ordered, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-    tmp.replace(PERMISSIONS_FILE)
-    _cfg = ordered
-    _loaded = True
-    print(f"[Permissions] Saved {PERMISSIONS_FILE}")
-
-
-def _collect_ranks(member) -> list[dict]:
-    """Return list of rank dicts the member currently holds (via Discord roles + overrides)."""
-    cfg = load_permissions()
-    ranks_found: list[dict] = []
-
-    role_map = cfg.get("role_map") or {}
-    all_ranks = cfg.get("ranks") or {}
-
-    # Discord roles → Chronos ranks
-    member_role_ids = {str(r.id) for r in member.roles}
-    member_role_names = {r.name for r in member.roles}
-
-    for key, rank_name in role_map.items():
-        key_str = str(key)
-        if key_str in member_role_ids or key_str in member_role_names:
-            rank = all_ranks.get(rank_name)
-            if rank:
-                ranks_found.append(rank)
-
-    # User overrides – extra ranks
-    override = (cfg.get("user_overrides") or {}).get(str(member.id)) or {}
-    for rank_name in override.get("extra_ranks") or []:
-        rank = all_ranks.get(rank_name)
-        if rank:
-            ranks_found.append(rank)
-
-    return ranks_found
-
-
-def has_permission(member, permission: str) -> bool:
+def _load_raw() -> dict[str, Any]:
     """
-    Check whether the Discord member has the given Chronos permission.
-
-    permission can be a special name ("sudo") or any command/alias name ("aegis").
+    Always re-read the file from disk.
+    On any failure → Safe-Mode.
     """
-    if member is None or permission is None:
+    if not PERMISSIONS_FILE.exists():
+        print(f"[Permissions] No {PERMISSIONS_FILE} – Safe-Mode")
+        return _empty_safe()
+
+    try:
+        with open(PERMISSIONS_FILE, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            print("[Permissions] YAML root is not a mapping – Safe-Mode")
+            return _empty_safe()
+
+        super_id = str(data.get("super_owner_id") or _FALLBACK_SUPER_OWNER).strip()
+        presets = data.get("presets") if isinstance(data.get("presets"), dict) else {}
+        users = data.get("users") if isinstance(data.get("users"), dict) else {}
+
+        if super_id not in users:
+            users[super_id] = {"rank": "owner", "needs_approval": False}
+
+        if "owner" not in presets:
+            presets["owner"] = {
+                "needs_approval": False,
+                "permissions": ["chronos:*", "alias:*", "bash:*"],
+            }
+
+        return {
+            "super_owner_id": super_id,
+            "presets": presets,
+            "users": users,
+            "_safe_mode": False,
+        }
+    except Exception as e:
+        print(f"[Permissions] Failed to load permissions.yml: {e} – Safe-Mode")
+        return _empty_safe()
+
+
+def is_safe_mode() -> bool:
+    return bool(_load_raw().get("_safe_mode"))
+
+
+def super_owner_id() -> str:
+    return str(_load_raw().get("super_owner_id") or _FALLBACK_SUPER_OWNER)
+
+
+def _normalize_perm(p: str) -> str:
+    return str(p).strip().lower()
+
+
+def _expand_permissions(raw_list: list[Any]) -> set[str]:
+    out: set[str] = set()
+    for item in raw_list or []:
+        if item is None:
+            continue
+        out.add(_normalize_perm(item))
+    return out
+
+
+def _resolve_permissions(user_id: int | str) -> set[str]:
+    """Final effective permission set: rank → + extra → − deny."""
+    cfg = _load_raw()
+    uid = str(user_id)
+
+    if uid == str(cfg.get("super_owner_id")):
+        return {"chronos:*", "alias:*", "bash:*"}
+
+    entry = (cfg.get("users") or {}).get(uid)
+    if not entry or not isinstance(entry, dict):
+        return set()
+
+    presets = cfg.get("presets") or {}
+    rank_name = entry.get("rank")
+    rank = presets.get(rank_name) if rank_name else None
+
+    perms: set[str] = set()
+    if isinstance(rank, dict):
+        perms |= _expand_permissions(rank.get("permissions") or [])
+
+    perms |= _expand_permissions(entry.get("extra") or [])
+
+    for d in _expand_permissions(entry.get("deny") or []):
+        perms.discard(d)
+
+    return perms
+
+
+def _matches(have: set[str], needed: str) -> bool:
+    needed = _normalize_perm(needed)
+    if not needed:
         return False
 
-    permission = str(permission).lower().strip()
-    cfg = load_permissions()
-
-    ranks = _collect_ranks(member)
-    if not ranks:
-        # No Chronos rank at all → only allow if somehow granted via override extras alone
-        override = (cfg.get("user_overrides") or {}).get(str(member.id)) or {}
-        extras = {str(p).lower() for p in (override.get("extra_permissions") or [])}
-        denied = {str(p).lower() for p in (override.get("denied_permissions") or [])}
-        if permission in denied:
-            return False
-        return permission in extras or "*" in extras or "sudo" in extras
-
-    # Highest level wins for inheritance
-    highest_level = max(r.get("level", 0) for r in ranks)
-
-    all_perms: set[str] = set()
-    for rank_name, rank in (cfg.get("ranks") or {}).items():
-        if rank.get("level", 0) <= highest_level:
-            for p in rank.get("permissions") or []:
-                all_perms.add(str(p).lower())
-
-    # Apply user overrides
-    override = (cfg.get("user_overrides") or {}).get(str(member.id)) or {}
-    for p in override.get("extra_permissions") or []:
-        all_perms.add(str(p).lower())
-    for p in override.get("denied_permissions") or []:
-        all_perms.discard(str(p).lower())
-
-    if "*" in all_perms or "sudo" in all_perms:
+    if needed in have:
         return True
-    return permission in all_perms
+
+    if "chronos:*" in have and needed.startswith("chronos:"):
+        return True
+    if "alias:*" in have and needed.startswith("alias:"):
+        return True
+    if "bash:*" in have and needed.startswith("bash:"):
+        return True
+
+    for held in have:
+        if held.endswith("*") and not held.endswith(":*"):
+            prefix = held[:-1]
+            if needed.startswith(prefix):
+                return True
+
+    return False
 
 
-def get_user_effective_permissions(member) -> set[str]:
-    """Return the full set of permission names the member currently has."""
-    cfg = load_permissions()
-    ranks = _collect_ranks(member)
-    if not ranks:
-        override = (cfg.get("user_overrides") or {}).get(str(member.id)) or {}
-        extras = {str(p).lower() for p in (override.get("extra_permissions") or [])}
-        denied = {str(p).lower() for p in (override.get("denied_permissions") or [])}
-        return extras - denied
+def has_permission(user_id: int | str, permission: str) -> bool:
+    """
+    Check a single namespaced permission.
 
-    highest_level = max(r.get("level", 0) for r in ranks)
-    all_perms: set[str] = set()
-    for rank in (cfg.get("ranks") or {}).values():
-        if rank.get("level", 0) <= highest_level:
-            for p in rank.get("permissions") or []:
-                all_perms.add(str(p).lower())
+    Examples:
+        has_permission(uid, "chronos:screenshot")
+        has_permission(uid, "bash:ls")
+        has_permission(uid, "alias:uptime")
+        has_permission(uid, "bash:*")
+    """
+    if user_id is None or permission is None:
+        return False
+    if not str(user_id).strip():
+        return False
 
-    override = (cfg.get("user_overrides") or {}).get(str(member.id)) or {}
-    for p in override.get("extra_permissions") or []:
-        all_perms.add(str(p).lower())
-    for p in override.get("denied_permissions") or []:
-        all_perms.discard(str(p).lower())
-
-    return all_perms
+    have = _resolve_permissions(user_id)
+    if not have:
+        return False
+    return _matches(have, permission)
 
 
-def list_special_permissions() -> dict[str, str]:
-    return dict(load_permissions().get("special_permissions") or {})
+def needs_approval(user_id: int | str) -> bool:
+    """Separate boolean. Missing entry → True (safe)."""
+    cfg = _load_raw()
+    uid = str(user_id)
+
+    if uid == str(cfg.get("super_owner_id")):
+        return False
+
+    entry = (cfg.get("users") or {}).get(uid)
+    if not entry or not isinstance(entry, dict):
+        return True
+
+    if "needs_approval" in entry:
+        return bool(entry["needs_approval"])
+
+    rank_name = entry.get("rank")
+    rank = (cfg.get("presets") or {}).get(rank_name) if rank_name else None
+    if isinstance(rank, dict) and "needs_approval" in rank:
+        return bool(rank["needs_approval"])
+
+    return True
 
 
-def list_ranks() -> dict[str, dict]:
-    return dict(load_permissions().get("ranks") or {})
+def can_write_permissions(user_id: int | str) -> bool:
+    """Only super-owner and rank owner may write."""
+    cfg = _load_raw()
+    uid = str(user_id)
+
+    if uid == str(cfg.get("super_owner_id")):
+        return True
+
+    entry = (cfg.get("users") or {}).get(uid)
+    if not entry or not isinstance(entry, dict):
+        return False
+    return entry.get("rank") == "owner"
+
+
+def get_effective_permissions(user_id: int | str) -> set[str]:
+    return _resolve_permissions(user_id)
+
+
+def list_presets() -> dict[str, dict]:
+    return dict(_load_raw().get("presets") or {})
+
+
+def list_users() -> dict[str, dict]:
+    return dict(_load_raw().get("users") or {})
+
+
+_last_write_ts: float = 0.0
+_WRITE_COOLDOWN = 2.0
+
+
+def save_permissions(
+    cfg: dict[str, Any],
+    *,
+    writer_id: int | str | None = None,
+) -> tuple[bool, str]:
+    global _last_write_ts
+
+    if writer_id is not None and not can_write_permissions(writer_id):
+        return False, "not allowed to write permissions"
+
+    now = time.time()
+    if now - _last_write_ts < _WRITE_COOLDOWN:
+        return False, "write cooldown – try again in a moment"
+
+    if not isinstance(cfg, dict):
+        return False, "config must be a dict"
+
+    ordered = {
+        "super_owner_id": str(cfg.get("super_owner_id") or _FALLBACK_SUPER_OWNER),
+        "presets": cfg.get("presets") if isinstance(cfg.get("presets"), dict) else {},
+        "users": cfg.get("users") if isinstance(cfg.get("users"), dict) else {},
+    }
+
+    try:
+        tmp = PERMISSIONS_FILE.with_suffix(".yml.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            yaml.safe_dump(
+                ordered,
+                f,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            )
+        tmp.replace(PERMISSIONS_FILE)
+        _last_write_ts = now
+        print(f"[Permissions] Saved {PERMISSIONS_FILE}")
+        return True, "ok"
+    except Exception as e:
+        return False, f"write failed: {e}"
+
+
+def give_permission(
+    target_id: int | str,
+    permission: str,
+    *,
+    writer_id: int | str,
+) -> tuple[bool, str]:
+    if not can_write_permissions(writer_id):
+        return False, "not allowed"
+
+    cfg = _load_raw()
+    if cfg.get("_safe_mode"):
+        return False, "safe-mode active – fix permissions.yml first"
+
+    uid = str(target_id)
+    users = dict(cfg.get("users") or {})
+    entry = dict(users.get(uid) or {})
+
+    extra = list(entry.get("extra") or [])
+    perm = _normalize_perm(permission)
+    if perm not in {_normalize_perm(x) for x in extra}:
+        extra.append(perm)
+    entry["extra"] = extra
+    users[uid] = entry
+
+    new_cfg = {
+        "super_owner_id": cfg["super_owner_id"],
+        "presets": cfg["presets"],
+        "users": users,
+    }
+    return save_permissions(new_cfg, writer_id=writer_id)
+
+
+def set_rank(
+    target_id: int | str,
+    rank: str,
+    *,
+    writer_id: int | str,
+) -> tuple[bool, str]:
+    if not can_write_permissions(writer_id):
+        return False, "not allowed"
+
+    cfg = _load_raw()
+    if cfg.get("_safe_mode"):
+        return False, "safe-mode active – fix permissions.yml first"
+
+    rank = str(rank).strip().lower()
+    if rank not in (cfg.get("presets") or {}):
+        return False, f"unknown rank: {rank}"
+
+    uid = str(target_id)
+    users = dict(cfg.get("users") or {})
+    entry = dict(users.get(uid) or {})
+    entry["rank"] = rank
+    users[uid] = entry
+
+    new_cfg = {
+        "super_owner_id": cfg["super_owner_id"],
+        "presets": cfg["presets"],
+        "users": users,
+    }
+    return save_permissions(new_cfg, writer_id=writer_id)
